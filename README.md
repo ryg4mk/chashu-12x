@@ -17,9 +17,9 @@ GitHub Pages で公開できる、HTML/CSS/JavaScript だけで作った無料�
 - 今の枚数
 - 最高記録
 - お会計
-- 6,000円からのお釣り
-- チャーシュー重量
-- チャーシューの厚み
+- お釣り（リザルトのみ、会計に応じて千円単位でお預かり額を切り上げ）
+- チャーシュー重量（リザルトのみ）
+- チャーシューの厚み（リザルトのみ）
 
 ## 設定値
 
@@ -56,3 +56,8 @@ GitHub Pages で公開できる、HTML/CSS/JavaScript だけで作った無料�
 - `https://ryg4mk.github.io/chashu-12x/`
 
 MIT License. 詳細は `LICENSE` を参照してください。
+
+## 表示・読み込みの安定化
+
+GitHub Pages のキャッシュで HTML / CSS / JS の世代が食い違わないよう、`index.html` 単体で動作する構成です。`style.css` / `game.js` は編集用の複製です（公開する場合は index.html にも反映してください）。
+
