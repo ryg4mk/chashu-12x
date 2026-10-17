@@ -3,62 +3,68 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
-  <meta name="theme-color" content="#160d0a">
-  <meta name="description" content="チャーシューを狙って落とそう！何枚のせられる？無料ブラウザゲーム『チャーシューメン、チャーシュー12倍』">
+  <meta name="theme-color" content="#180d09">
+  <meta name="description" content="特製チャーシューメンにチャーシューをどんどん落として積み上げる、GitHub Pages向け無料ブラウザゲーム。">
   <title>チャーシューメン、チャーシュー12倍</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
   <main id="app">
     <header class="header">
-      <div class="eyebrow">RAMEN STACKING CHALLENGE</div>
-      <h1>チャーシューメン<span>チャーシュー<span class="accent">12倍</span></span></h1>
-      <div class="rule"></div>
+      <div class="eyebrow">RAMEN PHYSICS STACK GAME</div>
+      <h1>チャーシューメン<span>チャーシュー12倍</span></h1>
+      <p class="lead">木札メニューのある店内で、チャーシューをどんどん追加！<br>器から落ちたら終了。</p>
     </header>
-    <section class="game-box" aria-label="ゲーム画面">
-      <canvas id="game" aria-label="チャーシューをラーメンに落とすゲーム"></canvas>
-      <aside class="menu-board" aria-label="店内のお品書き">
-        <div class="menu-title">お品書き</div>
-        <ul>
-          <li>餃子</li>
-          <li>ライス</li>
-          <li>野菜炒め</li>
-          <li>ラーメン</li>
-          <li class="special">特製チャーシューメン <b>950円</b></li>
-        </ul>
-        <div class="menu-note">チャーシュー6枚 420円</div>
-      </aside>
-      <div class="hud">
-        <div class="hud-item"><span class="hud-label">チャーシュー</span><strong id="score">6<span class="unit"> 枚</span></strong></div>
-        <div class="hud-item center-hud"><span class="hud-label">12倍まであと</span><strong id="remaining">66<span class="unit"> 枚</span></strong></div>
-        <div class="hud-item right-hud"><span class="hud-label">最高記録</span><strong id="best">6<span class="unit"> 枚</span></strong></div>
+
+    <section class="stage-wrap" aria-label="ゲーム画面">
+      <canvas id="game" aria-label="ラーメンにチャーシューを落として積み上げるゲーム"></canvas>
+
+      <div class="hud top-hud">
+        <div class="hud-card">
+          <small>今の枚数</small>
+          <strong id="score">6<span class="unit"> 枚</span></strong>
+        </div>
+        <div class="hud-card center-card">
+          <small>最高記録</small>
+          <strong id="best">6<span class="unit"> 枚</span></strong>
+        </div>
+        <div class="hud-card right-card">
+          <small>お会計</small>
+          <strong id="total">1,370円</strong>
+        </div>
       </div>
-      <div class="misses" id="misses" aria-label="残り失敗回数"><span>●</span><span>●</span><span>●</span></div>
+
       <div class="toast" id="toast" aria-live="polite"></div>
+
       <div class="overlay" id="overlay">
         <div class="overlay-panel">
           <span class="panel-eyebrow" id="panel-eyebrow">特製チャーシューメン 950円</span>
-          <h2 id="panel-title">チャーシューを<br>盛りまくれ！</h2>
-          <p id="panel-text">最初からチャーシュー6枚入り！<br>あと66枚のせて12倍（合計72枚）を目指そう。<br>3回はみ出したら終了！</p>
+          <h2 id="panel-title">チャーシューを<br>どんどん落とそう！</h2>
+          <p id="panel-text">最初から6枚入り。<br>タップするたびにチャーシューが落ちるよ。<br>器から1枚でも落ちたらゲームオーバー！</p>
           <button id="start-btn" class="primary-btn" type="button">ゲームスタート <span>▶</span></button>
-          <p class="microcopy">タップ・クリック・スペースキーで落とす</p>
+          <p class="microcopy">タップ / クリック / スペースキーで追加</p>
         </div>
       </div>
     </section>
-    <section class="receipt" aria-label="会計とチャーシューの記録">
-      <div class="receipt-main"><span>お会計</span><strong id="total">1,370円</strong><span class="cash-label">6,000円からのお釣り</span><strong id="change">4,630円</strong></div>
-      <div class="receipt-stats">
-        <div><small>チャーシュー重量</small><b id="weight">72g</b></div>
-        <div><small>チャーシューの厚み</small><b id="thickness">42mm</b></div>
-      </div>
-      <div class="receipt-detail">チャーシュー1枚＝7mm・12g・70円 ／ 特製950円＋チャーシュー代</div>
+
+    <section class="info-strip" aria-label="ゲーム情報">
+      <div class="info-box"><small>6,000円からのお釣り</small><b id="change">4,630円</b></div>
+      <div class="info-box"><small>チャーシュー重量</small><b id="weight">72g</b></div>
+      <div class="info-box"><small>チャーシューの厚み</small><b id="thickness">42mm</b></div>
     </section>
-    <section class="below">
-      <div class="control-hint"><span class="finger">☝</span><span><strong>タイミングよくタップ！</strong><small>チャーシューが左右に動くよ</small></span></div>
-      <button class="secondary-btn" id="restart" type="button">↻ はじめから</button>
+
+    <section class="bottom-row">
+      <div class="hint"><span class="finger">☝</span><span><strong>連打OK！</strong><small>どんどん落として山盛りにしよう</small></span></div>
+      <button class="secondary-btn" id="restart" type="button">↻ リスタート</button>
     </section>
-    <footer>ROO'S WORKSHOP <span>·</span> FREE BROWSER GAME</footer>
+
+    <footer>
+      <div>特製チャーシューメン 950円 / チャーシュー6枚 420円</div>
+      <div>チャーシュー1枚 = 12g / 7mm / 70円</div>
+      <div>ROO'S WORKSHOP · FREE BROWSER GAME</div>
+    </footer>
   </main>
+
   <script src="game.js" defer></script>
 </body>
 </html>
