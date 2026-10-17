@@ -6,7 +6,7 @@
   const SLICE_PRICE = 70;
   const SLICE_GRAMS = 12;
   const SLICE_MM = 7;
-  const CASH = 6000;
+  const CASH_UNIT = 1000;
 
   const canvas = document.getElementById('game');
   const ctx = canvas.getContext('2d');
@@ -16,9 +16,6 @@
     score: $('score'),
     best: $('best'),
     total: $('total'),
-    change: $('change'),
-    weight: $('weight'),
-    thickness: $('thickness'),
     overlay: $('overlay'),
     title: $('panel-title'),
     eyebrow: $('panel-eyebrow'),
@@ -49,8 +46,8 @@
 
   function resize() {
     const rect = canvas.getBoundingClientRect();
-    W = Math.max(320, rect.width);
-    H = Math.max(400, rect.height);
+    W = Math.max(1, rect.width);
+    H = Math.max(1, rect.height);
     dpr = Math.min(window.devicePixelRatio || 1, 2);
     canvas.width = Math.round(W * dpr);
     canvas.height = Math.round(H * dpr);
@@ -66,9 +63,9 @@
 
   const bowl = () => ({
     cx: W * 0.5,
-    bottomY: H * 0.83,
-    topY: H * 0.53,
-    bottomHalf: W * 0.17,
+    bottomY: H * 0.615,
+    topY: H * 0.46,
+    bottomHalf: W * 0.245,
     topHalf: W * 0.30,
     rimY: H * 0.56
   });
@@ -115,25 +112,20 @@
     const b = bowl();
     const r = Math.min(W, H) * 0.048;
     return [
-      makePiece(b.cx - r * 1.7, b.bottomY - r * 1.2, { touchedBowl: true, inserted: true, spillGuard: true }),
-      makePiece(b.cx, b.bottomY - r * 1.24, { touchedBowl: true, inserted: true, spillGuard: true }),
-      makePiece(b.cx + r * 1.7, b.bottomY - r * 1.18, { touchedBowl: true, inserted: true, spillGuard: true }),
-      makePiece(b.cx - r * 0.85, b.bottomY - r * 3.02, { touchedBowl: true, inserted: true, spillGuard: true }),
-      makePiece(b.cx + r * 0.95, b.bottomY - r * 3.06, { touchedBowl: true, inserted: true, spillGuard: true }),
-      makePiece(b.cx, b.bottomY - r * 4.95, { touchedBowl: true, inserted: true, spillGuard: true })
+      makePiece(b.cx - r * 2.55, b.bottomY - r, { touchedBowl: true, inserted: true, spillGuard: true }),
+      makePiece(b.cx - r * 0.85, b.bottomY - r, { touchedBowl: true, inserted: true, spillGuard: true }),
+      makePiece(b.cx + r * 0.85, b.bottomY - r, { touchedBowl: true, inserted: true, spillGuard: true }),
+      makePiece(b.cx + r * 2.55, b.bottomY - r, { touchedBowl: true, inserted: true, spillGuard: true }),
+      makePiece(b.cx - r * 0.8, b.bottomY - r * 2.7, { touchedBowl: true, inserted: true, spillGuard: true }),
+      makePiece(b.cx + r * 0.88, b.bottomY - r * 2.7, { touchedBowl: true, inserted: true, spillGuard: true })
     ];
   }
 
   function updateHud() {
     const total = RAMEN_PRICE + score * SLICE_PRICE;
-    const change = CASH - total;
     ui.score.innerHTML = `${score}<span class="unit"> 枚</span>`;
     ui.best.innerHTML = `${best}<span class="unit"> 枚</span>`;
     ui.total.textContent = yen(total);
-    ui.change.textContent = change >= 0 ? yen(change) : `${yen(Math.abs(change))}不足`;
-    ui.change.style.color = change >= 0 ? '#a0e1a2' : '#ffb6a5';
-    ui.weight.textContent = `${score * SLICE_GRAMS}g`;
-    ui.thickness.textContent = `${score * SLICE_MM}mm`;
   }
 
   function showToast(message, duration = 1100) {
@@ -149,7 +141,7 @@
   function resetGame() {
     pieces = initialPieces();
     score = START_COUNT;
-    launcherX = -0.86;
+    launcherX = 0;
     launcherDir = 1;
     lastSpawnTime = -9999;
     gameOverReason = '';
@@ -159,12 +151,18 @@
     updateHud();
   }
 
+  function paymentFor(total) {
+    return Math.ceil(total / CASH_UNIT) * CASH_UNIT;
+  }
+
   function openGameOver() {
     state = 'over';
     const total = RAMEN_PRICE + score * SLICE_PRICE;
+    const payment = paymentFor(total);
+    const change = payment - total;
     ui.eyebrow.textContent = '器からチャーシューが落ちた！';
-    ui.title.innerHTML = `${score}枚でストップ！`;
-    ui.text.innerHTML = `${gameOverReason || 'チャーシューが器から落ちてしまいました。'}<br>お会計 ${yen(total)} / お釣り ${yen(CASH - total)}<br>もう一度山盛りに挑戦しよう！`;
+    ui.title.textContent = `${score}枚でストップ！`;
+    ui.text.innerHTML = `チャーシュー重量 ${score * SLICE_GRAMS}g・厚さ ${score * SLICE_MM}mm<br>お会計 ${yen(total)}<br>${yen(payment)}お預かり → お釣り <strong>${yen(change)}</strong>`;
     ui.start.innerHTML = 'もう一度プレイ <span>▶</span>';
     ui.overlay.classList.remove('hidden');
   }
@@ -228,7 +226,7 @@
         const dx = p.x - b.cx;
         const limit = half - p.r * 0.86;
         if (Math.abs(dx) > limit) {
-          if (p.y < b.topY + p.r * 0.85 && p.inserted) {
+          if (p.inserted && !p.spillGuard) {
             return endBySpill(p);
           }
           const side = Math.sign(dx) || 1;
@@ -311,21 +309,25 @@
     ctx.textBaseline = 'top';
     let offset = 0;
     for (const ch of text) {
-      ctx.fillText(ch, x, y + offset);
-      offset += size * (ch === 'ー' ? 0.72 : 0.92);
+      if (ch === 'ー') {
+        ctx.fillRect(x - 1, y + offset + size * 0.1, 2, size * 0.7);
+      } else {
+        ctx.fillText(ch, x, y + offset);
+      }
+      offset += size * 0.92;
     }
     ctx.restore();
   }
 
   function drawMenuBoards() {
     const labels = ['餃子', 'ライス', '野菜炒め', 'ラーメン', '特製チャーシューメン'];
-    const startX = W * 0.16;
-    const gap = W * 0.15;
-    const boardW = W * 0.1;
-    const boardH = H * 0.24;
+    const startX = W * 0.12;
+    const gap = W * 0.18;
+    const boardW = W * 0.132;
+    const boardH = H * 0.33;
     for (let i = 0; i < labels.length; i++) {
       const x = startX + gap * i;
-      const y = H * 0.07 + Math.sin(i * 0.7) * 5;
+      const y = H * 0.145 + Math.sin(i * 0.7) * 3;
       ctx.save();
       ctx.translate(x, y);
       ctx.rotate((-6 + i * 3) * Math.PI / 180);
@@ -333,7 +335,8 @@
       drawRoundedRect(-boardW / 2 + 4, 4, boardW - 8, boardH - 8, 7, '#c99761');
       ctx.fillStyle = '#7a4b23';
       ctx.fillRect(-boardW / 2 + 8, 12, boardW - 16, 3);
-      drawVerticalText(labels[i], 0, 24, Math.max(14, W * 0.03), '#3b1d10');
+      const fontSize = Math.min(15, (boardH - 32) / (labels[i].length * 0.92));
+      drawVerticalText(labels[i], 0, 23, Math.max(9, fontSize), '#3b1d10');
       ctx.restore();
     }
   }
