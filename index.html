@@ -6,14 +6,209 @@
   <meta name="theme-color" content="#180d09">
   <meta name="description" content="特製チャーシューメンにチャーシューをどんどん落として積み上げる、GitHub Pages向け無料ブラウザゲーム。">
   <title>チャーシューメン、チャーシュー12倍</title>
-  <link rel="stylesheet" href="style.css">
+  <style>
+:root{
+  color-scheme:dark;
+  font-family:"Hiragino Kaku Gothic ProN","Yu Gothic",Meiryo,system-ui,sans-serif;
+  font-synthesis:none;
+}
+*{box-sizing:border-box}
+html,body{margin:0;min-height:100%;overscroll-behavior:none}
+body{
+  background:
+    radial-gradient(circle at 50% -10%, #7f4927 0%, #3a1d12 38%, #180d09 84%);
+  color:#fff2d9;
+  display:flex;
+  justify-content:center;
+}
+#app{
+  width:min(100%,680px);
+  min-height:100dvh;
+  padding:18px 14px 14px;
+  display:flex;
+  flex-direction:column;
+}
+.header{text-align:center;margin-bottom:10px}
+.eyebrow{
+  display:inline-block;
+  padding:4px 10px;
+  border-radius:999px;
+  border:1px solid #94623a;
+  background:#291711aa;
+  color:#ffd196;
+  font-size:11px;
+  letter-spacing:.12em;
+}
+h1{margin:10px 0 8px;font-size:clamp(28px,7.5vw,44px);line-height:1.15;text-shadow:0 3px 14px #0008}
+h1 span{display:block;color:#ffca74;font-size:.78em;margin-top:3px}
+.lead{margin:0 auto 6px;max-width:520px;color:#ecd3b0;font-size:13px;line-height:1.6}
+.stage-wrap{
+  position:relative;
+  width:100%;
+  aspect-ratio:10 / 13;
+  max-height:72dvh;
+  border:3px solid #aa6f43;
+  border-radius:20px;
+  overflow:hidden;
+  background:linear-gradient(#573021,#24120d);
+  box-shadow:0 18px 44px #0006;
+}
+canvas{display:block;width:100%;height:100%;touch-action:manipulation}
+.hud{
+  position:absolute;
+  left:10px;
+  right:10px;
+  display:flex;
+  gap:6px;
+  pointer-events:none;
+}
+.top-hud{top:10px}
+.hud-card{
+  flex:1 1 0;
+  min-width:0;
+  background:#21100bd8;
+  border:1px solid #bd8452;
+  border-radius:12px;
+  padding:7px 8px 8px;
+  box-shadow:0 6px 16px #0004;
+}
+.hud-card small{display:block;font-size:10px;color:#efcca2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.hud-card strong{display:block;margin-top:1px;font-size:clamp(18px,4.6vw,28px);color:#fff7e0;font-variant-numeric:tabular-nums;white-space:nowrap}
+.hud-card .unit{font-size:.52em;color:#f6c56c}
+.center-card strong{color:#ffd98b}
+.right-card strong{color:#9fe3a4;font-size:clamp(16px,4vw,25px)}
+.toast{
+  position:absolute;
+  left:50%;
+  bottom:16px;
+  transform:translateX(-50%) translateY(18px);
+  max-width:min(90%,460px);
+  padding:10px 14px;
+  border-radius:999px;
+  border:1px solid #c38c57;
+  background:#24120de8;
+  color:#fff1cc;
+  font-weight:700;
+  font-size:14px;
+  text-align:center;
+  opacity:0;
+  transition:opacity .18s ease, transform .18s ease;
+  pointer-events:none;
+}
+.toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+.overlay{
+  position:absolute;
+  inset:0;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  padding:18px;
+  background:#140b09be;
+  backdrop-filter:blur(2px);
+}
+.overlay.hidden{display:none}
+.overlay-panel{
+  width:min(100%,390px);
+  padding:24px 18px 18px;
+  border-radius:20px;
+  border:2px solid #e4ab63;
+  background:linear-gradient(180deg,#6d3d26,#351913);
+  text-align:center;
+  box-shadow:0 18px 34px #0008;
+}
+.panel-eyebrow{display:inline-block;margin-bottom:10px;font-size:12px;color:#ffd69a}
+.overlay-panel h2{margin:0 0 12px;font-size:clamp(27px,8vw,38px);line-height:1.2}
+.overlay-panel p{margin:0 0 14px;line-height:1.8;font-size:14px;color:#fae6c6}
+.primary-btn,.secondary-btn{
+  appearance:none;
+  border:0;
+  border-radius:999px;
+  cursor:pointer;
+  font-weight:900;
+  font-size:16px;
+}
+.primary-btn{
+  width:100%;
+  padding:15px 18px;
+  background:linear-gradient(#ffe4ad,#ffb64d);
+  color:#5b260f;
+  box-shadow:0 6px 16px #0004;
+}
+.primary-btn span{font-size:.92em}
+.microcopy{margin-top:10px !important;font-size:11px !important;color:#f0d3ae !important}
+.info-strip{
+  display:grid;
+  grid-template-columns:repeat(3, minmax(0,1fr));
+  gap:8px;
+  margin-top:12px;
+}
+.info-box{
+  padding:10px 10px 11px;
+  border-radius:14px;
+  border:1px solid #8e5d39;
+  background:#2a1711d6;
+  text-align:center;
+}
+.info-box small{display:block;font-size:10px;color:#e3c39e}
+.info-box b{display:block;margin-top:4px;font-size:clamp(15px,4vw,22px);color:#fff1cd;font-variant-numeric:tabular-nums}
+.info-box:first-child b{color:#a0e1a2}
+.bottom-row{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:10px;
+  margin-top:12px;
+}
+.hint{
+  display:flex;
+  align-items:center;
+  gap:10px;
+  color:#f7dfbf;
+  font-size:12px;
+}
+.finger{font-size:22px;line-height:1}
+.hint strong{display:block;font-size:14px}
+.hint small{display:block;color:#d5b38f}
+.secondary-btn{
+  flex:0 0 auto;
+  padding:12px 18px;
+  background:#f1d0a6;
+  color:#4d2312;
+  box-shadow:0 6px 14px #0003;
+}
+footer{
+  margin-top:16px;
+  text-align:center;
+  color:#cca47f;
+  font-size:10px;
+  line-height:1.65;
+}
+@media (max-width: 560px){
+  .stage-wrap{max-height:none}
+}
+@media (max-width: 480px){
+  #app{padding:14px 10px 12px}
+  .lead{font-size:12px}
+  .hud{left:8px;right:8px;gap:4px}
+  .hud-card{padding:6px 7px 7px}
+  .hud-card small{font-size:9px}
+  .info-strip{grid-template-columns:1fr;gap:7px}
+  .bottom-row{align-items:flex-start;flex-direction:column}
+  .secondary-btn{width:100%}
+}
+@media (max-width: 360px){
+  h1{font-size:25px}
+  .overlay-panel{padding:18px 12px 15px}
+  .overlay-panel p{font-size:13px}
+}
+
+</style>
 </head>
 <body>
   <main id="app">
     <header class="header">
       <div class="eyebrow">RAMEN PHYSICS STACK GAME</div>
       <h1>チャーシューメン<span>チャーシュー12倍</span></h1>
-      <p class="lead">木札メニューのある店内で、チャーシューをどんどん追加！<br>器から落ちたら終了。</p>
     </header>
 
     <section class="stage-wrap" aria-label="ゲーム画面">
@@ -47,24 +242,616 @@
       </div>
     </section>
 
-    <section class="info-strip" aria-label="ゲーム情報">
-      <div class="info-box"><small>6,000円からのお釣り</small><b id="change">4,630円</b></div>
-      <div class="info-box"><small>チャーシュー重量</small><b id="weight">72g</b></div>
-      <div class="info-box"><small>チャーシューの厚み</small><b id="thickness">42mm</b></div>
-    </section>
-
     <section class="bottom-row">
-      <div class="hint"><span class="finger">☝</span><span><strong>連打OK！</strong><small>どんどん落として山盛りにしよう</small></span></div>
+      <div class="hint"><span class="finger">☝</span><span><strong>タップでチャーシューを落とす</strong><small>器から落ちたら終了</small></span></div>
       <button class="secondary-btn" id="restart" type="button">↻ リスタート</button>
     </section>
 
     <footer>
       <div>特製チャーシューメン 950円 / チャーシュー6枚 420円</div>
-      <div>チャーシュー1枚 = 12g / 7mm / 70円</div>
       <div>ROO'S WORKSHOP · FREE BROWSER GAME</div>
     </footer>
   </main>
 
-  <script src="game.js" defer></script>
+  <script>
+(() => {
+  'use strict';
+
+  const START_COUNT = 6;
+  const RAMEN_PRICE = 950;
+  const SLICE_PRICE = 70;
+  const SLICE_GRAMS = 12;
+  const SLICE_MM = 7;
+  const CASH_UNIT = 1000;
+
+  const canvas = document.getElementById('game');
+  const ctx = canvas.getContext('2d');
+  const $ = (id) => document.getElementById(id);
+
+  const ui = {
+    score: $('score'),
+    best: $('best'),
+    total: $('total'),
+    overlay: $('overlay'),
+    title: $('panel-title'),
+    eyebrow: $('panel-eyebrow'),
+    text: $('panel-text'),
+    start: $('start-btn'),
+    restart: $('restart'),
+    toast: $('toast')
+  };
+
+  let W = 390;
+  let H = 507;
+  let dpr = 1;
+  let last = 0;
+  let time = 0;
+  let state = 'menu';
+  let score = START_COUNT;
+  let best = START_COUNT;
+  let pieces = [];
+  let toastUntil = 0;
+  let launcherX = 0;
+  let launcherDir = 1;
+  let lastSpawnTime = -9999;
+  let gameOverReason = '';
+
+  try {
+    best = Math.max(START_COUNT, Number(localStorage.getItem('chashu-physics-best')) || START_COUNT);
+  } catch (_) {}
+
+  function resize() {
+    const rect = canvas.getBoundingClientRect();
+    W = Math.max(1, rect.width);
+    H = Math.max(1, rect.height);
+    dpr = Math.min(window.devicePixelRatio || 1, 2);
+    canvas.width = Math.round(W * dpr);
+    canvas.height = Math.round(H * dpr);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+
+  if (window.ResizeObserver) {
+    new ResizeObserver(resize).observe(canvas);
+  } else {
+    window.addEventListener('resize', resize);
+  }
+  resize();
+
+  const bowl = () => ({
+    cx: W * 0.5,
+    bottomY: H * 0.615,
+    topY: H * 0.46,
+    bottomHalf: W * 0.245,
+    topHalf: W * 0.30,
+    rimY: H * 0.56
+  });
+
+  function getHalfWidth(y) {
+    const b = bowl();
+    const t = clamp((b.bottomY - y) / (b.bottomY - b.topY), 0, 1);
+    return lerp(b.bottomHalf, b.topHalf, Math.pow(t, 0.72));
+  }
+
+  function clamp(v, min, max) {
+    return Math.max(min, Math.min(max, v));
+  }
+
+  function lerp(a, b, t) {
+    return a + (b - a) * t;
+  }
+
+  function rand(min, max) {
+    return min + Math.random() * (max - min);
+  }
+
+  function yen(v) {
+    return `${Math.round(v).toLocaleString('ja-JP')}円`;
+  }
+
+  function makePiece(x, y, options = {}) {
+    return {
+      x,
+      y,
+      vx: options.vx || 0,
+      vy: options.vy || 0,
+      r: options.r || Math.min(W, H) * 0.048,
+      angle: rand(-0.22, 0.22),
+      spin: rand(-0.024, 0.024),
+      seed: Math.random() * 100,
+      touchedBowl: !!options.touchedBowl,
+      inserted: !!options.inserted,
+      spillGuard: !!options.spillGuard
+    };
+  }
+
+  function initialPieces() {
+    const b = bowl();
+    const r = Math.min(W, H) * 0.048;
+    return [
+      makePiece(b.cx - r * 2.55, b.bottomY - r, { touchedBowl: true, inserted: true, spillGuard: true }),
+      makePiece(b.cx - r * 0.85, b.bottomY - r, { touchedBowl: true, inserted: true, spillGuard: true }),
+      makePiece(b.cx + r * 0.85, b.bottomY - r, { touchedBowl: true, inserted: true, spillGuard: true }),
+      makePiece(b.cx + r * 2.55, b.bottomY - r, { touchedBowl: true, inserted: true, spillGuard: true }),
+      makePiece(b.cx - r * 0.8, b.bottomY - r * 2.7, { touchedBowl: true, inserted: true, spillGuard: true }),
+      makePiece(b.cx + r * 0.88, b.bottomY - r * 2.7, { touchedBowl: true, inserted: true, spillGuard: true })
+    ];
+  }
+
+  function updateHud() {
+    const total = RAMEN_PRICE + score * SLICE_PRICE;
+    ui.score.innerHTML = `${score}<span class="unit"> 枚</span>`;
+    ui.best.innerHTML = `${best}<span class="unit"> 枚</span>`;
+    ui.total.textContent = yen(total);
+  }
+
+  function showToast(message, duration = 1100) {
+    ui.toast.textContent = message;
+    ui.toast.classList.add('show');
+    toastUntil = time + duration;
+  }
+
+  function hideToastIfNeeded() {
+    if (time > toastUntil) ui.toast.classList.remove('show');
+  }
+
+  function resetGame() {
+    pieces = initialPieces();
+    score = START_COUNT;
+    launcherX = 0;
+    launcherDir = 1;
+    lastSpawnTime = -9999;
+    gameOverReason = '';
+    state = 'play';
+    ui.overlay.classList.add('hidden');
+    ui.toast.classList.remove('show');
+    updateHud();
+  }
+
+  function paymentFor(total) {
+    return Math.ceil(total / CASH_UNIT) * CASH_UNIT;
+  }
+
+  function openGameOver() {
+    state = 'over';
+    const total = RAMEN_PRICE + score * SLICE_PRICE;
+    const payment = paymentFor(total);
+    const change = payment - total;
+    ui.eyebrow.textContent = '器からチャーシューが落ちた！';
+    ui.title.textContent = `${score}枚でストップ！`;
+    ui.text.innerHTML = `チャーシュー重量 ${score * SLICE_GRAMS}g・厚さ ${score * SLICE_MM}mm<br>お会計 ${yen(total)}<br>${yen(payment)}お預かり → お釣り <strong>${yen(change)}</strong>`;
+    ui.start.innerHTML = 'もう一度プレイ <span>▶</span>';
+    ui.overlay.classList.remove('hidden');
+  }
+
+  function spawnPiece() {
+    if (state !== 'play') return;
+    if (time - lastSpawnTime < 60) return;
+    lastSpawnTime = time;
+
+    const b = bowl();
+    const x = b.cx + launcherX * (b.topHalf * 0.95);
+    const y = H * 0.18;
+    pieces.push(makePiece(x, y, { vx: rand(-18, 18), vy: 0 }));
+    score += 1;
+    if (score > best) {
+      best = score;
+      try { localStorage.setItem('chashu-physics-best', String(best)); } catch (_) {}
+    }
+    updateHud();
+    if (score % 10 === 0) showToast(`${score}枚！ まだまだいける！`);
+  }
+
+  function endBySpill(piece) {
+    if (state !== 'play') return;
+    piece.spilled = true;
+    gameOverReason = `外に落ちたチャーシューでゲームオーバー。`;
+    showToast('器から落ちた！');
+    openGameOver();
+  }
+
+  function physics(dt) {
+    const b = bowl();
+    launcherX += launcherDir * dt * 0.00115;
+    if (launcherX > 0.94) { launcherX = 0.94; launcherDir = -1; }
+    if (launcherX < -0.94) { launcherX = -0.94; launcherDir = 1; }
+
+    const gravity = 1450;
+    const bounce = 0.16;
+    const friction = 0.988;
+
+    for (const p of pieces) {
+      if (p.spilled) continue;
+
+      p.vy += gravity * dt / 1000;
+      p.x += p.vx * dt / 1000;
+      p.y += p.vy * dt / 1000;
+      p.angle += p.spin * dt / 16;
+      p.spin *= 0.998;
+
+      if (p.y + p.r >= b.bottomY) {
+        p.y = b.bottomY - p.r;
+        if (p.vy > 0) p.vy *= -bounce;
+        p.vx *= 0.95;
+        p.touchedBowl = true;
+      }
+
+      if (p.y + p.r > b.topY + 8) p.inserted = true;
+
+      if (p.y >= b.topY - p.r * 0.4 && p.y <= b.bottomY + p.r) {
+        const half = getHalfWidth(clamp(p.y, b.topY, b.bottomY));
+        const dx = p.x - b.cx;
+        const limit = half - p.r * 0.86;
+        if (Math.abs(dx) > limit) {
+          if (p.inserted && !p.spillGuard) {
+            return endBySpill(p);
+          }
+          const side = Math.sign(dx) || 1;
+          p.x = b.cx + side * limit;
+          p.vx *= -0.28;
+          p.vy *= 0.98;
+          p.touchedBowl = true;
+        }
+      }
+
+      if (p.inserted && p.y < b.topY - p.r * 0.2 && Math.abs(p.x - b.cx) > b.topHalf - p.r * 0.55) {
+        return endBySpill(p);
+      }
+    }
+
+    for (let k = 0; k < 4; k++) {
+      for (let i = 0; i < pieces.length; i++) {
+        const a = pieces[i];
+        if (a.spilled) continue;
+        for (let j = i + 1; j < pieces.length; j++) {
+          const b2 = pieces[j];
+          if (b2.spilled) continue;
+          const dx = b2.x - a.x;
+          const dy = b2.y - a.y;
+          const dist = Math.hypot(dx, dy) || 0.0001;
+          const minDist = a.r + b2.r;
+          if (dist < minDist) {
+            const nx = dx / dist;
+            const ny = dy / dist;
+            const overlap = minDist - dist;
+            a.x -= nx * overlap * 0.5;
+            a.y -= ny * overlap * 0.5;
+            b2.x += nx * overlap * 0.5;
+            b2.y += ny * overlap * 0.5;
+
+            const rvx = b2.vx - a.vx;
+            const rvy = b2.vy - a.vy;
+            const sep = rvx * nx + rvy * ny;
+            if (sep < 0) {
+              const impulse = -sep * 0.36;
+              a.vx -= nx * impulse;
+              a.vy -= ny * impulse;
+              b2.vx += nx * impulse;
+              b2.vy += ny * impulse;
+            }
+
+            a.vx *= friction;
+            b2.vx *= friction;
+            a.spin += rand(-0.004, 0.004);
+            b2.spin += rand(-0.004, 0.004);
+          }
+        }
+      }
+    }
+
+    for (const p of pieces) {
+      p.vx *= 0.998;
+      if (Math.abs(p.vx) < 0.2) p.vx *= 0.94;
+      if (Math.abs(p.vy) < 0.18) p.vy = 0;
+    }
+  }
+
+  function drawRoundedRect(x, y, w, h, r, fill) {
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.arcTo(x + w, y, x + w, y + h, r);
+    ctx.arcTo(x + w, y + h, x, y + h, r);
+    ctx.arcTo(x, y + h, x, y, r);
+    ctx.arcTo(x, y, x + w, y, r);
+    ctx.closePath();
+    ctx.fillStyle = fill;
+    ctx.fill();
+  }
+
+  function drawVerticalText(text, x, y, size, color) {
+    ctx.save();
+    ctx.fillStyle = color;
+    ctx.font = `700 ${size}px "Yu Gothic", sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'top';
+    let offset = 0;
+    for (const ch of text) {
+      if (ch === 'ー') {
+        ctx.fillRect(x - 1, y + offset + size * 0.1, 2, size * 0.7);
+      } else {
+        ctx.fillText(ch, x, y + offset);
+      }
+      offset += size * 0.92;
+    }
+    ctx.restore();
+  }
+
+  function drawMenuBoards() {
+    const labels = ['餃子', 'ライス', '野菜炒め', 'ラーメン', '特製チャーシューメン'];
+    const startX = W * 0.12;
+    const gap = W * 0.18;
+    const boardW = W * 0.132;
+    const boardH = H * 0.33;
+    for (let i = 0; i < labels.length; i++) {
+      const x = startX + gap * i;
+      const y = H * 0.145 + Math.sin(i * 0.7) * 3;
+      ctx.save();
+      ctx.translate(x, y);
+      ctx.rotate((-6 + i * 3) * Math.PI / 180);
+      drawRoundedRect(-boardW / 2, 0, boardW, boardH, 8, '#8a5a2f');
+      drawRoundedRect(-boardW / 2 + 4, 4, boardW - 8, boardH - 8, 7, '#c99761');
+      ctx.fillStyle = '#7a4b23';
+      ctx.fillRect(-boardW / 2 + 8, 12, boardW - 16, 3);
+      const fontSize = Math.min(15, (boardH - 32) / (labels[i].length * 0.92));
+      drawVerticalText(labels[i], 0, 23, Math.max(9, fontSize), '#3b1d10');
+      ctx.restore();
+    }
+  }
+
+  function drawBackground() {
+    const wall = ctx.createLinearGradient(0, 0, 0, H * 0.66);
+    wall.addColorStop(0, '#704124');
+    wall.addColorStop(0.5, '#8e5734');
+    wall.addColorStop(1, '#3b2015');
+    ctx.fillStyle = wall;
+    ctx.fillRect(0, 0, W, H * 0.68);
+
+    for (let i = 0; i < 8; i++) {
+      const y = H * 0.68 + i * H * 0.06;
+      ctx.fillStyle = i % 2 ? '#5f341e' : '#704126';
+      ctx.fillRect(0, y, W, H * 0.06 + 1);
+      ctx.strokeStyle = '#3a1f13';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(0, y + H * 0.06);
+      ctx.lineTo(W, y + H * 0.06);
+      ctx.stroke();
+    }
+
+    drawMenuBoards();
+  }
+
+  function drawBowlBase() {
+    const b = bowl();
+    const cx = b.cx;
+    const bodyTop = b.rimY + H * 0.02;
+    const bodyBottom = H * 0.96;
+    const frontRx = b.topHalf * 1.06;
+    const frontRy = H * 0.082;
+
+    ctx.fillStyle = 'rgba(0,0,0,0.28)';
+    ctx.beginPath();
+    ctx.ellipse(cx + 12, bodyBottom - 4, frontRx * 1.03, frontRy * 0.5, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    const bodyGrad = ctx.createLinearGradient(0, bodyTop, 0, bodyBottom);
+    bodyGrad.addColorStop(0, '#fff1dc');
+    bodyGrad.addColorStop(0.28, '#efc49a');
+    bodyGrad.addColorStop(0.6, '#d37245');
+    bodyGrad.addColorStop(1, '#59231b');
+
+    ctx.beginPath();
+    ctx.moveTo(cx - frontRx, b.rimY);
+    ctx.quadraticCurveTo(cx - frontRx * 1.08, H * 0.78, cx - frontRx * 0.78, bodyBottom - 14);
+    ctx.quadraticCurveTo(cx, bodyBottom + 6, cx + frontRx * 0.78, bodyBottom - 14);
+    ctx.quadraticCurveTo(cx + frontRx * 1.08, H * 0.78, cx + frontRx, b.rimY);
+    ctx.closePath();
+    ctx.fillStyle = bodyGrad;
+    ctx.fill();
+
+    ctx.strokeStyle = '#8e4537';
+    ctx.lineWidth = 3;
+    ctx.stroke();
+  }
+
+  function drawSoupAndNoodles() {
+    const b = bowl();
+    const cx = b.cx;
+    const soupRx = b.topHalf * 0.96;
+    const soupRy = H * 0.086;
+
+    ctx.fillStyle = '#fdf5ea';
+    ctx.beginPath();
+    ctx.ellipse(cx, b.rimY, soupRx * 1.07, soupRy * 1.13, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.fillStyle = '#743422';
+    ctx.beginPath();
+    ctx.ellipse(cx, b.rimY + 2, soupRx, soupRy, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    const soup = ctx.createRadialGradient(cx, b.rimY - 10, 10, cx, b.rimY, soupRx);
+    soup.addColorStop(0, '#ffdd86');
+    soup.addColorStop(0.65, '#eda242');
+    soup.addColorStop(1, '#a65a22');
+    ctx.fillStyle = soup;
+    ctx.beginPath();
+    ctx.ellipse(cx, b.rimY, soupRx * 0.92, soupRy * 0.84, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.save();
+    ctx.beginPath();
+    ctx.ellipse(cx, b.rimY, soupRx * 0.89, soupRy * 0.8, 0, 0, Math.PI * 2);
+    ctx.clip();
+    for (let i = 0; i < 22; i++) {
+      const px = cx - soupRx * 0.74 + i * (soupRx * 1.46 / 21) + Math.sin(i * 1.2) * 5;
+      const py = b.rimY + Math.cos(i * 1.07) * soupRy * 0.33;
+      ctx.beginPath();
+      ctx.moveTo(px - 18, py);
+      ctx.bezierCurveTo(px - 5, py - 12, px + 8, py + 11, px + 22, py - 2);
+      ctx.strokeStyle = i % 2 ? '#ffefb6cc' : '#f6c95ecc';
+      ctx.lineWidth = 2.4;
+      ctx.stroke();
+    }
+    for (let i = 0; i < 16; i++) {
+      ctx.fillStyle = i % 3 ? '#8bb24d' : '#c6d766';
+      ctx.beginPath();
+      ctx.ellipse(cx + Math.sin(i * 1.9) * soupRx * 0.56, b.rimY + Math.cos(i * 1.27) * soupRy * 0.44, 4.5, 2.6, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
+
+    ctx.strokeStyle = '#fff5de';
+    ctx.lineWidth = 6;
+    ctx.beginPath();
+    ctx.ellipse(cx, b.rimY, soupRx * 1.06, soupRy * 1.05, 0, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+
+  function drawChashu(piece) {
+    const flatten = 0.74;
+    const w = piece.r * 2.1;
+    const h = piece.r * 1.47;
+
+    ctx.save();
+    ctx.translate(piece.x, piece.y);
+    ctx.rotate(piece.angle);
+    ctx.shadowColor = 'rgba(28, 8, 6, 0.28)';
+    ctx.shadowBlur = 8;
+    ctx.shadowOffsetY = 3;
+
+    ctx.beginPath();
+    ctx.ellipse(0, 0, w * 0.52, h * 0.52, 0, 0, Math.PI * 2);
+    ctx.fillStyle = '#7f3324';
+    ctx.fill();
+
+    ctx.beginPath();
+    ctx.ellipse(0, -1, w * 0.49, h * 0.48, 0, 0, Math.PI * 2);
+    ctx.fillStyle = '#b95636';
+    ctx.fill();
+
+    ctx.beginPath();
+    ctx.ellipse(0, -2, w * 0.40, h * 0.39, 0, 0, Math.PI * 2);
+    ctx.fillStyle = '#f2bd92';
+    ctx.fill();
+
+    ctx.beginPath();
+    ctx.ellipse(-w * 0.08, -h * 0.03, w * 0.22, h * 0.19, 0, 0, Math.PI * 2);
+    ctx.fillStyle = '#d98b65';
+    ctx.fill();
+
+    ctx.beginPath();
+    ctx.ellipse(0, -2, w * 0.43, h * 0.42, 0.12, 0.14, 5.9);
+    ctx.strokeStyle = '#ffe9c1';
+    ctx.lineWidth = 2.2;
+    ctx.stroke();
+
+    for (let i = 0; i < 8; i++) {
+      const ang = piece.seed + i * 0.9;
+      ctx.beginPath();
+      ctx.ellipse(Math.cos(ang) * w * 0.18, Math.sin(ang) * h * 0.12, 2.4, 1.4, 0, 0, Math.PI * 2);
+      ctx.fillStyle = i % 2 ? '#8e3829aa' : '#ffe3b0aa';
+      ctx.fill();
+    }
+
+    ctx.restore();
+  }
+
+  function drawLauncher() {
+    const b = bowl();
+    const x = b.cx + launcherX * b.topHalf * 0.95;
+    const y = H * 0.15;
+    ctx.strokeStyle = 'rgba(255, 224, 176, 0.55)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(x, y - 36);
+    ctx.lineTo(x, y - 4);
+    ctx.stroke();
+
+    ctx.fillStyle = '#f5dbaa';
+    ctx.beginPath();
+    ctx.roundRect(x - 22, y - 54, 44, 16, 8);
+    ctx.fill();
+
+    ctx.beginPath();
+    ctx.ellipse(x, y, b.topHalf * 0.18, H * 0.02, 0, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(255, 250, 210, 0.12)';
+    ctx.fill();
+  }
+
+  function drawFrontRim() {
+    const b = bowl();
+    const cx = b.cx;
+    const rimRx = b.topHalf * 1.08;
+    const rimRy = H * 0.092;
+
+    ctx.strokeStyle = '#a95742';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.ellipse(cx, b.rimY + 1, rimRx, rimRy, 0, Math.PI * 0.01, Math.PI * 0.99);
+    ctx.stroke();
+
+    ctx.fillStyle = 'rgba(255,255,255,0.06)';
+    ctx.beginPath();
+    ctx.ellipse(cx, b.rimY + rimRy * 0.16, rimRx * 0.88, rimRy * 0.34, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  function drawScene() {
+    ctx.clearRect(0, 0, W, H);
+    drawBackground();
+    drawBowlBase();
+    drawSoupAndNoodles();
+
+    const sorted = [...pieces].sort((a, b) => a.y - b.y);
+    for (const p of sorted) drawChashu(p);
+
+    drawFrontRim();
+    if (state === 'play') drawLauncher();
+  }
+
+  function frame(ts) {
+    const dt = Math.min(33, ts - last || 16);
+    last = ts;
+    time = ts;
+
+    if (state === 'play') physics(dt);
+    drawScene();
+    hideToastIfNeeded();
+    requestAnimationFrame(frame);
+  }
+
+  ui.start.addEventListener('click', (e) => {
+    e.stopPropagation();
+    resetGame();
+  });
+
+  ui.restart.addEventListener('click', (e) => {
+    e.stopPropagation();
+    resetGame();
+  });
+
+  canvas.addEventListener('pointerdown', (e) => {
+    e.preventDefault();
+    if (state === 'play') spawnPiece();
+  });
+
+  window.addEventListener('keydown', (e) => {
+    if (e.code !== 'Space' && e.code !== 'Enter') return;
+    if (document.activeElement && ['BUTTON', 'INPUT', 'TEXTAREA'].includes(document.activeElement.tagName)) return;
+    e.preventDefault();
+    if (state === 'play') spawnPiece();
+    else resetGame();
+  });
+
+  window.addEventListener('blur', () => {
+    last = 0;
+  });
+
+  pieces = initialPieces();
+  updateHud();
+  requestAnimationFrame(frame);
+})();
+
+</script>
 </body>
 </html>
