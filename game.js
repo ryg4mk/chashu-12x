@@ -1,73 +1,594 @@
-(()=>{'use strict';
-const canvas=document.getElementById('game'),ctx=canvas.getContext('2d');const $=id=>document.getElementById(id);
-const ui={score:$('score'),remaining:$('remaining'),best:$('best'),total:$('total'),change:$('change'),weight:$('weight'),thickness:$('thickness'),misses:$('misses'),toast:$('toast'),overlay:$('overlay'),title:$('panel-title'),eyebrow:$('panel-eyebrow'),text:$('panel-text'),start:$('start-btn')};
-const START_SLICES=6,TARGET_SLICES=72,SLICE_MM=7,SLICE_GRAMS=12,SLICE_PRICE=420/6,RAMEN_PRICE=950,CASH=6000;
-let W=390,H=520,dpr=1,lastTime=0,now=0,state='menu',score=START_SLICES,misses=0,best=START_SLICES,pieces=[],flying=null,aimX=0,aimDir=1,speed=0.95,toastUntil=0,won=false,particles=[],shake=0;
-try{best=Math.max(START_SLICES,Number(localStorage.getItem('chashu12x-best'))||0)}catch(e){};
-function resize(){const rect=canvas.getBoundingClientRect();W=Math.max(rect.width,1);H=Math.max(rect.height,1);dpr=Math.min(window.devicePixelRatio||1,2);canvas.width=Math.round(W*dpr);canvas.height=Math.round(H*dpr);ctx.setTransform(dpr,0,0,dpr,0,0)}
-if(window.ResizeObserver){new ResizeObserver(resize).observe(canvas)}else window.addEventListener('resize',resize);resize();
-const cx=()=>W/2,cy=()=>H*.665,rx=()=>Math.min(W*.378,H*.285),ry=()=>rx()*.405;
-function ellipse(x,y,a,b,color){ctx.beginPath();ctx.ellipse(x,y,Math.max(a,.1),Math.max(b,.1),0,0,Math.PI*2);if(color){ctx.fillStyle=color;ctx.fill()}}
-function line(x1,y1,x2,y2,color,width){ctx.beginPath();ctx.moveTo(x1,y1);ctx.lineTo(x2,y2);ctx.strokeStyle=color;ctx.lineWidth=width;ctx.stroke()}
-function ring(x,y,a,b,color,width){ellipse(x,y,a,b);ctx.strokeStyle=color;ctx.lineWidth=width;ctx.stroke()}
-function rand(a,b){return a+Math.random()*(b-a)}
-function roundRect(x,y,w,h,r,color){ctx.beginPath();ctx.roundRect(x,y,w,h,r);ctx.fillStyle=color;ctx.fill()}
-function bg(){const g=ctx.createLinearGradient(0,0,0,H);g.addColorStop(0,'#643922');g.addColorStop(.6,'#965a30');g.addColorStop(1,'#532a1c');ctx.fillStyle=g;ctx.fillRect(0,0,W,H);
-// wooden counter
-for(let i=0;i<10;i++){let yy=H*(.06+i*.12);line(0,yy,W,yy+W*.08,'#4b22152a',2);line(0,yy+3,W,yy+3+W*.08,'#e9aa5a1c',1)}
-const v=ctx.createRadialGradient(cx(),cy(),W*.1,cx(),cy(),W*.8);v.addColorStop(0,'#fff1a409');v.addColorStop(1,'#1808069c');ctx.fillStyle=v;ctx.fillRect(0,0,W,H);
-// chopsticks resting on table
-ctx.save();ctx.translate(W*.10,H*.53);ctx.rotate(-.29);roundRect(0,0,W*.37,6,3,'#f2c782');roundRect(0,11,W*.37,6,3,'#d89848');ctx.restore();
-}
-function bowl(){const x=cx(),y=cy(),a=rx(),b=ry();ctx.save();ctx.fillStyle='#1a08075e';ellipse(x+8,y+b*.95,a*1.09,b*.67,'#1b070b80');
-// bowl body
-const grad=ctx.createLinearGradient(0,y-b*.1,0,y+b*1.45);grad.addColorStop(0,'#fff4df');grad.addColorStop(.28,'#eebc88');grad.addColorStop(.8,'#c15238');grad.addColorStop(1,'#57201b');ellipse(x,y+b*.48,a*.98,b*1.08,grad);
-// scalloped decorative band
-ring(x,y+b*.22,a*.92,b*.86,'#802d28',5);ellipse(x,y,a,b,'#fff0d1');ellipse(x,y,a*.9,b*.85,'#732d22');ellipse(x,y,a*.85,b*.78,'#c16d24');ellipse(x,y,a*.805,b*.71,'#e5a13e');
-// soup marbling
-for(let i=0;i<16;i++){const ang=i*2.39996, r=Math.sqrt((i+.5)/16);ellipse(x+Math.cos(ang)*a*.69*r,y+Math.sin(ang)*b*.59*r,a*.12,b*.052,i%3===0?'#edbb5d93':'#b65d2780')}
-// noodles
-ctx.save();ctx.beginPath();ctx.ellipse(x,y,a*.79,b*.68,0,0,Math.PI*2);ctx.clip();for(let i=0;i<19;i++){const px=x+Math.sin(i*2.6)*a*.55, py=y+Math.cos(i*1.8)*b*.39;ctx.beginPath();ctx.moveTo(px-12,py);ctx.bezierCurveTo(px+3,py-13,px+12,py+14,px+26,py-1);ctx.strokeStyle=i%3?'#f8cf76ba':'#fff4b8bc';ctx.lineWidth=rand(2,3.4);ctx.stroke()}
-// scallions
-for(let i=0;i<18;i++){let ang=i*2.4,rad=Math.sqrt((i+.5)/18);ellipse(x+Math.cos(ang)*a*.66*rad,y+Math.sin(ang)*b*.53*rad,rand(2,5),rand(1,2.8),i%3===0?'#c4dc5d':'#548c3d')}
-ctx.restore();ring(x,y,a*.94,b*.895,'#fff0d9',Math.max(5,W*.016));ring(x,y,a*1.013,b*1.018,'#a85840',2);ctx.restore()}
-function nextLevel(){return 1.28+Math.max(0,score-START_SLICES)*.37}
-function initialPieces(){return [
-{x:-.43,z:-.28,level:0,seed:12},
-{x:.34,z:-.32,level:.16,seed:24},
-{x:-.48,z:.18,level:.38,seed:33},
-{x:.42,z:.17,level:.58,seed:45},
-{x:-.04,z:-.38,level:.81,seed:63},
-{x:0,z:.04,level:1.05,seed:90}
-]}
-function point(p){const a=rx(),b=ry();return {x:cx()+p.x*a*.79,y:cy()+p.z*b*.73-p.level*4.15}}
-function meat(x,y,scale,seed,alpha=1){const a=rx()*.325*scale,b=ry()*.57*scale;ctx.save();ctx.globalAlpha=alpha;ctx.translate(x,y);ctx.rotate(Math.sin(seed*11)*.095);
-ctx.shadowColor='#29100b7d';ctx.shadowBlur=8*scale;ctx.shadowOffsetY=4*scale;ellipse(0,0,a,b,'#6b2d21');ctx.shadowColor='transparent';ellipse(0,-2*scale,a*.94,b*.92,'#a3472d');ellipse(0,-3*scale,a*.82,b*.8,'#e8af84');ellipse(0,-3*scale,a*.63,b*.65,'#b65136');ellipse(-a*.05,-b*.04,a*.47,b*.47,'#cc7951');
-ctx.beginPath();ctx.ellipse(0,-3*scale,a*.76,b*.74,0,.12,5.85);ctx.strokeStyle='#ffe1ae';ctx.lineWidth=3*scale;ctx.stroke();
-for(let i=0;i<8;i++){let t=seed*1.23+i*2.399,rr=(.2+(i%4)*.16);ellipse(Math.cos(t)*a*rr,Math.sin(t)*b*rr-2*scale,Math.max(1,3*scale),Math.max(.7,1.45*scale),i%2?'#8c362766':'#ffe2ac77')}
-ctx.restore()}
-function drawPieces(){const sorted=[...pieces].sort((a,b)=>a.level-b.level||a.z-b.z);for(const p of sorted){let q=point(p);meat(q.x,q.y,1,p.seed)}}
-function shadow(){if(state!=='play'||flying)return;const p={x:aimX,z:-.08,level:nextLevel()};const q=point(p);ctx.save();ctx.setLineDash([5,6]);ring(q.x,q.y,rx()*.32,ry()*.56,'#fff4cfbd',2);ctx.setLineDash([]);ellipse(q.x,q.y,rx()*.29,ry()*.50,'#fffcba24');ctx.restore()}
-function drawCurrent(){if(state!=='play')return;const p={x:aimX,z:-.08,level:0};let target=point(p);let y=flying?flying.y:H*.23+Math.sin(now*.004)*3;let x=flying?flying.x:target.x;ctx.save();line(x,y-34,x,y-62,'#ffe4a363',2);meat(x,y,1.05,score+17);ctx.restore()}
-function renderParticles(dt){for(const p of particles){p.life-=dt;p.y+=p.vy*dt;p.x+=p.vx*dt;p.vy+=.00045*dt;ctx.globalAlpha=Math.max(0,p.life/650);ellipse(p.x,p.y,p.r,p.r,p.c)}ctx.globalAlpha=1;particles=particles.filter(p=>p.life>0)}
-function boom(x,y){for(let i=0;i<13;i++)particles.push({x,y,vx:rand(-.20,.20),vy:rand(-.27,-.06),r:rand(2,4),c:i%2?'#ffcc67':'#fff2c1',life:rand(300,700)})}
-function announce(txt,duration=1000){ui.toast.textContent=txt;ui.toast.classList.add('show');toastUntil=now+duration}
-function hud(){const bill=RAMEN_PRICE+score*SLICE_PRICE,change=CASH-bill;const yen=n=>n.toLocaleString('ja-JP')+'円';ui.score.innerHTML=`${score}<span class="unit"> 枚</span>`;ui.remaining.innerHTML=`${Math.max(0,TARGET_SLICES-score)}<span class="unit"> 枚</span>`;ui.best.innerHTML=`${best}<span class="unit"> 枚</span>`;ui.total.textContent=yen(bill);ui.change.textContent=change>=0?yen(change):yen(-change)+'不足';ui.change.classList.toggle('negative',change<0);ui.weight.textContent=(score*SLICE_GRAMS)+'g';ui.thickness.textContent=(score*SLICE_MM)+'mm';[...ui.misses.children].forEach((el,i)=>el.classList.toggle('lost',i<misses))}
-function reset(){score=START_SLICES;misses=0;pieces=initialPieces();flying=null;aimX=-.65;aimDir=1;speed=.92;won=false;particles=[];state='play';ui.overlay.classList.add('hidden');ui.toast.classList.remove('show');hud()}
-function finish(isWin=false){state='over';flying=null;const bill=RAMEN_PRICE+score*SLICE_PRICE;ui.eyebrow.textContent=isWin?'特製チャーシューメン、チャーシュー12倍！':'ラーメン完成！';ui.title.innerHTML=isWin?'72枚！<br>12倍盛り達成！':score+'枚のせた！';ui.text.innerHTML=isWin?'チャーシュー864g・厚さ504mm<br>お会計 5,990円<br>6,000円からのお釣りは10円！':'お会計 '+bill.toLocaleString('ja-JP')+'円<br>12倍まであと'+Math.max(0,TARGET_SLICES-score)+'枚<br>もう一度、山盛りに挑戦しよう！';ui.start.innerHTML='もう一度プレイ <span>▶</span>';ui.overlay.classList.remove('hidden')}
-function drop(){if(state!=='play'||flying)return;const target=point({x:aimX,z:-.08,level:nextLevel()});flying={x:target.x,y:H*.23,targetX:aimX,vy:0,rotation:0}}
-function land(){if(!flying)return;const x=flying.targetX+rand(-.032,.032)*(1+score*.025);flying=null;
-const previous=pieces[pieces.length-1];const overlap=previous?Math.abs(x-previous.x):0;
-const supported=Math.abs(x)<1&&(!previous||overlap<(.85+Math.min(score*.01,.18)));
-if(!supported){misses++;shake=10;announce('あっ！ はみ出した！');hud();if(misses>=3){state='ending';setTimeout(()=>{if(state==='ending')finish(false)},520)}return}
-const p={x,z:-.08,level:nextLevel(),seed:Math.random()*100};pieces.push(p);score++;let q=point(p);boom(q.x,q.y);
-if(score>best){best=score;try{localStorage.setItem('chashu12x-best',String(best))}catch(e){}}
-hud();if(score>=TARGET_SLICES){won=true;announce('12倍盛り達成！ お釣り10円！');finish(true);return}
-if(score%12===0){announce(score/START_SLICES+'倍盛り！ '+score+'枚達成！',1400)}else if(score%5===0){announce(score+'枚！ まだまだ盛れる！')}else if(score===START_SLICES+1){announce('いい感じ！')}
-speed=Math.min(2.1,.92+(score-START_SLICES)*.052)}
-function tick(t){let dt=Math.min(45,Math.max(0,t-lastTime||16));lastTime=t;now=t;
-if(state==='play'){if(!flying){aimX+=aimDir*speed*dt/950;if(aimX>.91){aimX=.91;aimDir=-1}else if(aimX<-.91){aimX=-.91;aimDir=1}}else{flying.vy+=.00165*dt;flying.y+=flying.vy*dt;let target=point({x:flying.targetX,z:-.08,level:nextLevel()});if(flying.y>=target.y){land()}}}
-ctx.save();if(shake>0){ctx.translate(rand(-shake,shake),rand(-shake/2,shake/2));shake=Math.max(0,shake-dt*.045)}bg();bowl();shadow();drawPieces();drawCurrent();renderParticles(dt);ctx.restore();if(now>toastUntil)ui.toast.classList.remove('show');requestAnimationFrame(tick)}
-ui.start.addEventListener('click',e=>{e.stopPropagation();reset()});$('restart').addEventListener('click',e=>{e.stopPropagation();reset()});canvas.addEventListener('pointerdown',e=>{e.preventDefault();drop()});window.addEventListener('keydown',e=>{if(e.code==='Space'||e.code==='Enter'){if(['BUTTON','INPUT'].includes(document.activeElement?.tagName))return;e.preventDefault();if(state==='play')drop();else reset()}});
-window.addEventListener('blur',()=>{lastTime=0});pieces=initialPieces();hud();requestAnimationFrame(tick);
+(() => {
+  'use strict';
+
+  const START_COUNT = 6;
+  const RAMEN_PRICE = 950;
+  const SLICE_PRICE = 70;
+  const SLICE_GRAMS = 12;
+  const SLICE_MM = 7;
+  const CASH = 6000;
+
+  const canvas = document.getElementById('game');
+  const ctx = canvas.getContext('2d');
+  const $ = (id) => document.getElementById(id);
+
+  const ui = {
+    score: $('score'),
+    best: $('best'),
+    total: $('total'),
+    change: $('change'),
+    weight: $('weight'),
+    thickness: $('thickness'),
+    overlay: $('overlay'),
+    title: $('panel-title'),
+    eyebrow: $('panel-eyebrow'),
+    text: $('panel-text'),
+    start: $('start-btn'),
+    restart: $('restart'),
+    toast: $('toast')
+  };
+
+  let W = 390;
+  let H = 507;
+  let dpr = 1;
+  let last = 0;
+  let time = 0;
+  let state = 'menu';
+  let score = START_COUNT;
+  let best = START_COUNT;
+  let pieces = [];
+  let toastUntil = 0;
+  let launcherX = 0;
+  let launcherDir = 1;
+  let lastSpawnTime = -9999;
+  let gameOverReason = '';
+
+  try {
+    best = Math.max(START_COUNT, Number(localStorage.getItem('chashu-physics-best')) || START_COUNT);
+  } catch (_) {}
+
+  function resize() {
+    const rect = canvas.getBoundingClientRect();
+    W = Math.max(320, rect.width);
+    H = Math.max(400, rect.height);
+    dpr = Math.min(window.devicePixelRatio || 1, 2);
+    canvas.width = Math.round(W * dpr);
+    canvas.height = Math.round(H * dpr);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+
+  if (window.ResizeObserver) {
+    new ResizeObserver(resize).observe(canvas);
+  } else {
+    window.addEventListener('resize', resize);
+  }
+  resize();
+
+  const bowl = () => ({
+    cx: W * 0.5,
+    bottomY: H * 0.83,
+    topY: H * 0.53,
+    bottomHalf: W * 0.17,
+    topHalf: W * 0.30,
+    rimY: H * 0.56
+  });
+
+  function getHalfWidth(y) {
+    const b = bowl();
+    const t = clamp((b.bottomY - y) / (b.bottomY - b.topY), 0, 1);
+    return lerp(b.bottomHalf, b.topHalf, Math.pow(t, 0.72));
+  }
+
+  function clamp(v, min, max) {
+    return Math.max(min, Math.min(max, v));
+  }
+
+  function lerp(a, b, t) {
+    return a + (b - a) * t;
+  }
+
+  function rand(min, max) {
+    return min + Math.random() * (max - min);
+  }
+
+  function yen(v) {
+    return `${Math.round(v).toLocaleString('ja-JP')}円`;
+  }
+
+  function makePiece(x, y, options = {}) {
+    return {
+      x,
+      y,
+      vx: options.vx || 0,
+      vy: options.vy || 0,
+      r: options.r || Math.min(W, H) * 0.048,
+      angle: rand(-0.22, 0.22),
+      spin: rand(-0.024, 0.024),
+      seed: Math.random() * 100,
+      touchedBowl: !!options.touchedBowl,
+      inserted: !!options.inserted,
+      spillGuard: !!options.spillGuard
+    };
+  }
+
+  function initialPieces() {
+    const b = bowl();
+    const r = Math.min(W, H) * 0.048;
+    return [
+      makePiece(b.cx - r * 1.7, b.bottomY - r * 1.2, { touchedBowl: true, inserted: true, spillGuard: true }),
+      makePiece(b.cx, b.bottomY - r * 1.24, { touchedBowl: true, inserted: true, spillGuard: true }),
+      makePiece(b.cx + r * 1.7, b.bottomY - r * 1.18, { touchedBowl: true, inserted: true, spillGuard: true }),
+      makePiece(b.cx - r * 0.85, b.bottomY - r * 3.02, { touchedBowl: true, inserted: true, spillGuard: true }),
+      makePiece(b.cx + r * 0.95, b.bottomY - r * 3.06, { touchedBowl: true, inserted: true, spillGuard: true }),
+      makePiece(b.cx, b.bottomY - r * 4.95, { touchedBowl: true, inserted: true, spillGuard: true })
+    ];
+  }
+
+  function updateHud() {
+    const total = RAMEN_PRICE + score * SLICE_PRICE;
+    const change = CASH - total;
+    ui.score.innerHTML = `${score}<span class="unit"> 枚</span>`;
+    ui.best.innerHTML = `${best}<span class="unit"> 枚</span>`;
+    ui.total.textContent = yen(total);
+    ui.change.textContent = change >= 0 ? yen(change) : `${yen(Math.abs(change))}不足`;
+    ui.change.style.color = change >= 0 ? '#a0e1a2' : '#ffb6a5';
+    ui.weight.textContent = `${score * SLICE_GRAMS}g`;
+    ui.thickness.textContent = `${score * SLICE_MM}mm`;
+  }
+
+  function showToast(message, duration = 1100) {
+    ui.toast.textContent = message;
+    ui.toast.classList.add('show');
+    toastUntil = time + duration;
+  }
+
+  function hideToastIfNeeded() {
+    if (time > toastUntil) ui.toast.classList.remove('show');
+  }
+
+  function resetGame() {
+    pieces = initialPieces();
+    score = START_COUNT;
+    launcherX = -0.86;
+    launcherDir = 1;
+    lastSpawnTime = -9999;
+    gameOverReason = '';
+    state = 'play';
+    ui.overlay.classList.add('hidden');
+    ui.toast.classList.remove('show');
+    updateHud();
+  }
+
+  function openGameOver() {
+    state = 'over';
+    const total = RAMEN_PRICE + score * SLICE_PRICE;
+    ui.eyebrow.textContent = '器からチャーシューが落ちた！';
+    ui.title.innerHTML = `${score}枚でストップ！`;
+    ui.text.innerHTML = `${gameOverReason || 'チャーシューが器から落ちてしまいました。'}<br>お会計 ${yen(total)} / お釣り ${yen(CASH - total)}<br>もう一度山盛りに挑戦しよう！`;
+    ui.start.innerHTML = 'もう一度プレイ <span>▶</span>';
+    ui.overlay.classList.remove('hidden');
+  }
+
+  function spawnPiece() {
+    if (state !== 'play') return;
+    if (time - lastSpawnTime < 60) return;
+    lastSpawnTime = time;
+
+    const b = bowl();
+    const x = b.cx + launcherX * (b.topHalf * 0.95);
+    const y = H * 0.18;
+    pieces.push(makePiece(x, y, { vx: rand(-18, 18), vy: 0 }));
+    score += 1;
+    if (score > best) {
+      best = score;
+      try { localStorage.setItem('chashu-physics-best', String(best)); } catch (_) {}
+    }
+    updateHud();
+    if (score % 10 === 0) showToast(`${score}枚！ まだまだいける！`);
+  }
+
+  function endBySpill(piece) {
+    if (state !== 'play') return;
+    piece.spilled = true;
+    gameOverReason = `外に落ちたチャーシューでゲームオーバー。`;
+    showToast('器から落ちた！');
+    openGameOver();
+  }
+
+  function physics(dt) {
+    const b = bowl();
+    launcherX += launcherDir * dt * 0.00115;
+    if (launcherX > 0.94) { launcherX = 0.94; launcherDir = -1; }
+    if (launcherX < -0.94) { launcherX = -0.94; launcherDir = 1; }
+
+    const gravity = 1450;
+    const bounce = 0.16;
+    const friction = 0.988;
+
+    for (const p of pieces) {
+      if (p.spilled) continue;
+
+      p.vy += gravity * dt / 1000;
+      p.x += p.vx * dt / 1000;
+      p.y += p.vy * dt / 1000;
+      p.angle += p.spin * dt / 16;
+      p.spin *= 0.998;
+
+      if (p.y + p.r >= b.bottomY) {
+        p.y = b.bottomY - p.r;
+        if (p.vy > 0) p.vy *= -bounce;
+        p.vx *= 0.95;
+        p.touchedBowl = true;
+      }
+
+      if (p.y + p.r > b.topY + 8) p.inserted = true;
+
+      if (p.y >= b.topY - p.r * 0.4 && p.y <= b.bottomY + p.r) {
+        const half = getHalfWidth(clamp(p.y, b.topY, b.bottomY));
+        const dx = p.x - b.cx;
+        const limit = half - p.r * 0.86;
+        if (Math.abs(dx) > limit) {
+          if (p.y < b.topY + p.r * 0.85 && p.inserted) {
+            return endBySpill(p);
+          }
+          const side = Math.sign(dx) || 1;
+          p.x = b.cx + side * limit;
+          p.vx *= -0.28;
+          p.vy *= 0.98;
+          p.touchedBowl = true;
+        }
+      }
+
+      if (p.inserted && p.y < b.topY - p.r * 0.2 && Math.abs(p.x - b.cx) > b.topHalf - p.r * 0.55) {
+        return endBySpill(p);
+      }
+    }
+
+    for (let k = 0; k < 4; k++) {
+      for (let i = 0; i < pieces.length; i++) {
+        const a = pieces[i];
+        if (a.spilled) continue;
+        for (let j = i + 1; j < pieces.length; j++) {
+          const b2 = pieces[j];
+          if (b2.spilled) continue;
+          const dx = b2.x - a.x;
+          const dy = b2.y - a.y;
+          const dist = Math.hypot(dx, dy) || 0.0001;
+          const minDist = a.r + b2.r;
+          if (dist < minDist) {
+            const nx = dx / dist;
+            const ny = dy / dist;
+            const overlap = minDist - dist;
+            a.x -= nx * overlap * 0.5;
+            a.y -= ny * overlap * 0.5;
+            b2.x += nx * overlap * 0.5;
+            b2.y += ny * overlap * 0.5;
+
+            const rvx = b2.vx - a.vx;
+            const rvy = b2.vy - a.vy;
+            const sep = rvx * nx + rvy * ny;
+            if (sep < 0) {
+              const impulse = -sep * 0.36;
+              a.vx -= nx * impulse;
+              a.vy -= ny * impulse;
+              b2.vx += nx * impulse;
+              b2.vy += ny * impulse;
+            }
+
+            a.vx *= friction;
+            b2.vx *= friction;
+            a.spin += rand(-0.004, 0.004);
+            b2.spin += rand(-0.004, 0.004);
+          }
+        }
+      }
+    }
+
+    for (const p of pieces) {
+      p.vx *= 0.998;
+      if (Math.abs(p.vx) < 0.2) p.vx *= 0.94;
+      if (Math.abs(p.vy) < 0.18) p.vy = 0;
+    }
+  }
+
+  function drawRoundedRect(x, y, w, h, r, fill) {
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.arcTo(x + w, y, x + w, y + h, r);
+    ctx.arcTo(x + w, y + h, x, y + h, r);
+    ctx.arcTo(x, y + h, x, y, r);
+    ctx.arcTo(x, y, x + w, y, r);
+    ctx.closePath();
+    ctx.fillStyle = fill;
+    ctx.fill();
+  }
+
+  function drawVerticalText(text, x, y, size, color) {
+    ctx.save();
+    ctx.fillStyle = color;
+    ctx.font = `700 ${size}px "Yu Gothic", sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'top';
+    let offset = 0;
+    for (const ch of text) {
+      ctx.fillText(ch, x, y + offset);
+      offset += size * (ch === 'ー' ? 0.72 : 0.92);
+    }
+    ctx.restore();
+  }
+
+  function drawMenuBoards() {
+    const labels = ['餃子', 'ライス', '野菜炒め', 'ラーメン', '特製チャーシューメン'];
+    const startX = W * 0.16;
+    const gap = W * 0.15;
+    const boardW = W * 0.1;
+    const boardH = H * 0.24;
+    for (let i = 0; i < labels.length; i++) {
+      const x = startX + gap * i;
+      const y = H * 0.07 + Math.sin(i * 0.7) * 5;
+      ctx.save();
+      ctx.translate(x, y);
+      ctx.rotate((-6 + i * 3) * Math.PI / 180);
+      drawRoundedRect(-boardW / 2, 0, boardW, boardH, 8, '#8a5a2f');
+      drawRoundedRect(-boardW / 2 + 4, 4, boardW - 8, boardH - 8, 7, '#c99761');
+      ctx.fillStyle = '#7a4b23';
+      ctx.fillRect(-boardW / 2 + 8, 12, boardW - 16, 3);
+      drawVerticalText(labels[i], 0, 24, Math.max(14, W * 0.03), '#3b1d10');
+      ctx.restore();
+    }
+  }
+
+  function drawBackground() {
+    const wall = ctx.createLinearGradient(0, 0, 0, H * 0.66);
+    wall.addColorStop(0, '#704124');
+    wall.addColorStop(0.5, '#8e5734');
+    wall.addColorStop(1, '#3b2015');
+    ctx.fillStyle = wall;
+    ctx.fillRect(0, 0, W, H * 0.68);
+
+    for (let i = 0; i < 8; i++) {
+      const y = H * 0.68 + i * H * 0.06;
+      ctx.fillStyle = i % 2 ? '#5f341e' : '#704126';
+      ctx.fillRect(0, y, W, H * 0.06 + 1);
+      ctx.strokeStyle = '#3a1f13';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(0, y + H * 0.06);
+      ctx.lineTo(W, y + H * 0.06);
+      ctx.stroke();
+    }
+
+    drawMenuBoards();
+  }
+
+  function drawBowlBase() {
+    const b = bowl();
+    const cx = b.cx;
+    const bodyTop = b.rimY + H * 0.02;
+    const bodyBottom = H * 0.96;
+    const frontRx = b.topHalf * 1.06;
+    const frontRy = H * 0.082;
+
+    ctx.fillStyle = 'rgba(0,0,0,0.28)';
+    ctx.beginPath();
+    ctx.ellipse(cx + 12, bodyBottom - 4, frontRx * 1.03, frontRy * 0.5, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    const bodyGrad = ctx.createLinearGradient(0, bodyTop, 0, bodyBottom);
+    bodyGrad.addColorStop(0, '#fff1dc');
+    bodyGrad.addColorStop(0.28, '#efc49a');
+    bodyGrad.addColorStop(0.6, '#d37245');
+    bodyGrad.addColorStop(1, '#59231b');
+
+    ctx.beginPath();
+    ctx.moveTo(cx - frontRx, b.rimY);
+    ctx.quadraticCurveTo(cx - frontRx * 1.08, H * 0.78, cx - frontRx * 0.78, bodyBottom - 14);
+    ctx.quadraticCurveTo(cx, bodyBottom + 6, cx + frontRx * 0.78, bodyBottom - 14);
+    ctx.quadraticCurveTo(cx + frontRx * 1.08, H * 0.78, cx + frontRx, b.rimY);
+    ctx.closePath();
+    ctx.fillStyle = bodyGrad;
+    ctx.fill();
+
+    ctx.strokeStyle = '#8e4537';
+    ctx.lineWidth = 3;
+    ctx.stroke();
+  }
+
+  function drawSoupAndNoodles() {
+    const b = bowl();
+    const cx = b.cx;
+    const soupRx = b.topHalf * 0.96;
+    const soupRy = H * 0.086;
+
+    ctx.fillStyle = '#fdf5ea';
+    ctx.beginPath();
+    ctx.ellipse(cx, b.rimY, soupRx * 1.07, soupRy * 1.13, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.fillStyle = '#743422';
+    ctx.beginPath();
+    ctx.ellipse(cx, b.rimY + 2, soupRx, soupRy, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    const soup = ctx.createRadialGradient(cx, b.rimY - 10, 10, cx, b.rimY, soupRx);
+    soup.addColorStop(0, '#ffdd86');
+    soup.addColorStop(0.65, '#eda242');
+    soup.addColorStop(1, '#a65a22');
+    ctx.fillStyle = soup;
+    ctx.beginPath();
+    ctx.ellipse(cx, b.rimY, soupRx * 0.92, soupRy * 0.84, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.save();
+    ctx.beginPath();
+    ctx.ellipse(cx, b.rimY, soupRx * 0.89, soupRy * 0.8, 0, 0, Math.PI * 2);
+    ctx.clip();
+    for (let i = 0; i < 22; i++) {
+      const px = cx - soupRx * 0.74 + i * (soupRx * 1.46 / 21) + Math.sin(i * 1.2) * 5;
+      const py = b.rimY + Math.cos(i * 1.07) * soupRy * 0.33;
+      ctx.beginPath();
+      ctx.moveTo(px - 18, py);
+      ctx.bezierCurveTo(px - 5, py - 12, px + 8, py + 11, px + 22, py - 2);
+      ctx.strokeStyle = i % 2 ? '#ffefb6cc' : '#f6c95ecc';
+      ctx.lineWidth = 2.4;
+      ctx.stroke();
+    }
+    for (let i = 0; i < 16; i++) {
+      ctx.fillStyle = i % 3 ? '#8bb24d' : '#c6d766';
+      ctx.beginPath();
+      ctx.ellipse(cx + Math.sin(i * 1.9) * soupRx * 0.56, b.rimY + Math.cos(i * 1.27) * soupRy * 0.44, 4.5, 2.6, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
+
+    ctx.strokeStyle = '#fff5de';
+    ctx.lineWidth = 6;
+    ctx.beginPath();
+    ctx.ellipse(cx, b.rimY, soupRx * 1.06, soupRy * 1.05, 0, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+
+  function drawChashu(piece) {
+    const flatten = 0.74;
+    const w = piece.r * 2.1;
+    const h = piece.r * 1.47;
+
+    ctx.save();
+    ctx.translate(piece.x, piece.y);
+    ctx.rotate(piece.angle);
+    ctx.shadowColor = 'rgba(28, 8, 6, 0.28)';
+    ctx.shadowBlur = 8;
+    ctx.shadowOffsetY = 3;
+
+    ctx.beginPath();
+    ctx.ellipse(0, 0, w * 0.52, h * 0.52, 0, 0, Math.PI * 2);
+    ctx.fillStyle = '#7f3324';
+    ctx.fill();
+
+    ctx.beginPath();
+    ctx.ellipse(0, -1, w * 0.49, h * 0.48, 0, 0, Math.PI * 2);
+    ctx.fillStyle = '#b95636';
+    ctx.fill();
+
+    ctx.beginPath();
+    ctx.ellipse(0, -2, w * 0.40, h * 0.39, 0, 0, Math.PI * 2);
+    ctx.fillStyle = '#f2bd92';
+    ctx.fill();
+
+    ctx.beginPath();
+    ctx.ellipse(-w * 0.08, -h * 0.03, w * 0.22, h * 0.19, 0, 0, Math.PI * 2);
+    ctx.fillStyle = '#d98b65';
+    ctx.fill();
+
+    ctx.beginPath();
+    ctx.ellipse(0, -2, w * 0.43, h * 0.42, 0.12, 0.14, 5.9);
+    ctx.strokeStyle = '#ffe9c1';
+    ctx.lineWidth = 2.2;
+    ctx.stroke();
+
+    for (let i = 0; i < 8; i++) {
+      const ang = piece.seed + i * 0.9;
+      ctx.beginPath();
+      ctx.ellipse(Math.cos(ang) * w * 0.18, Math.sin(ang) * h * 0.12, 2.4, 1.4, 0, 0, Math.PI * 2);
+      ctx.fillStyle = i % 2 ? '#8e3829aa' : '#ffe3b0aa';
+      ctx.fill();
+    }
+
+    ctx.restore();
+  }
+
+  function drawLauncher() {
+    const b = bowl();
+    const x = b.cx + launcherX * b.topHalf * 0.95;
+    const y = H * 0.15;
+    ctx.strokeStyle = 'rgba(255, 224, 176, 0.55)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(x, y - 36);
+    ctx.lineTo(x, y - 4);
+    ctx.stroke();
+
+    ctx.fillStyle = '#f5dbaa';
+    ctx.beginPath();
+    ctx.roundRect(x - 22, y - 54, 44, 16, 8);
+    ctx.fill();
+
+    ctx.beginPath();
+    ctx.ellipse(x, y, b.topHalf * 0.18, H * 0.02, 0, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(255, 250, 210, 0.12)';
+    ctx.fill();
+  }
+
+  function drawFrontRim() {
+    const b = bowl();
+    const cx = b.cx;
+    const rimRx = b.topHalf * 1.08;
+    const rimRy = H * 0.092;
+
+    ctx.strokeStyle = '#a95742';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.ellipse(cx, b.rimY + 1, rimRx, rimRy, 0, Math.PI * 0.01, Math.PI * 0.99);
+    ctx.stroke();
+
+    ctx.fillStyle = 'rgba(255,255,255,0.06)';
+    ctx.beginPath();
+    ctx.ellipse(cx, b.rimY + rimRy * 0.16, rimRx * 0.88, rimRy * 0.34, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  function drawScene() {
+    ctx.clearRect(0, 0, W, H);
+    drawBackground();
+    drawBowlBase();
+    drawSoupAndNoodles();
+
+    const sorted = [...pieces].sort((a, b) => a.y - b.y);
+    for (const p of sorted) drawChashu(p);
+
+    drawFrontRim();
+    if (state === 'play') drawLauncher();
+  }
+
+  function frame(ts) {
+    const dt = Math.min(33, ts - last || 16);
+    last = ts;
+    time = ts;
+
+    if (state === 'play') physics(dt);
+    drawScene();
+    hideToastIfNeeded();
+    requestAnimationFrame(frame);
+  }
+
+  ui.start.addEventListener('click', (e) => {
+    e.stopPropagation();
+    resetGame();
+  });
+
+  ui.restart.addEventListener('click', (e) => {
+    e.stopPropagation();
+    resetGame();
+  });
+
+  canvas.addEventListener('pointerdown', (e) => {
+    e.preventDefault();
+    if (state === 'play') spawnPiece();
+  });
+
+  window.addEventListener('keydown', (e) => {
+    if (e.code !== 'Space' && e.code !== 'Enter') return;
+    if (document.activeElement && ['BUTTON', 'INPUT', 'TEXTAREA'].includes(document.activeElement.tagName)) return;
+    e.preventDefault();
+    if (state === 'play') spawnPiece();
+    else resetGame();
+  });
+
+  window.addEventListener('blur', () => {
+    last = 0;
+  });
+
+  pieces = initialPieces();
+  updateHud();
+  requestAnimationFrame(frame);
 })();
