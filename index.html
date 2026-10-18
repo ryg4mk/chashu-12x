@@ -59,7 +59,7 @@ button{font-family:inherit;cursor:pointer;touch-action:manipulation}
 <div class="overlay" id="overlay"><div class="panel">
 <div class="panel-label" id="panel-label">特製チャーシューメン</div>
 <h2 id="panel-title">何枚のせられる？</h2>
-<p id="panel-info">金色の輪を狙って落とそう。<br>赤い輪は器の外！</p>
+<p id="panel-info">タイミングよくチャーシューを落とそう！</p>
 <div id="result-detail" class="result-detail" hidden></div>
 <button id="start" class="primary" type="button">ゲームスタート</button>
 </div></div>
@@ -117,12 +117,12 @@ el.label.textContent='特製チャーシューメン';el.title.classList.remove(
 function factor(n){return (Math.round(n/BASE*100)/100).toString();}
 function payment(n){return Math.ceil(n/1000)*1000;}
 function finish(){if(stage==='over')return;stage='over';stopHold();const cost=RAMEN+score*SLICE,pay=payment(cost);
-el.label.textContent='ゲームオーバー';el.title.classList.add('result-title');el.title.innerHTML=`チャーシューメン、<br>チャーシュー${factor(score)}倍`;
+el.label.textContent='ゲームオーバー';el.title.classList.add('result-title');el.title.innerHTML=`チャーシューメン、<br>チャーシュー${factor(score)}倍！？`;
 el.info.textContent=`${score}枚`;el.details.hidden=false;
 el.details.innerHTML=`<div><span>チャーシュー重量</span><b>${score*GRAMS}g</b></div><div><span>チャーシューの厚み</span><b>${score*MM}mm</b></div><div><span>お会計</span><b>${money(cost)}</b></div><div><span>お預かり</span><b>${money(pay)}</b></div><div class="change"><span>お釣り</span><b>${money(pay-cost)}</b></div>`;
 el.start.textContent='もう一度';el.overlay.classList.remove('hidden');}
 function fire(){if(stage!=='play'||now-lastFire<TEMPO.tapDelay)return;
-lastFire=now;const a=aim();shotPulse={x:a.x,z:a.z,at:now,danger:bowlDist(a)>=PHY.escape};
+lastFire=now;const a=aim();shotPulse={x:a.x,z:a.z,at:now};
 // Use only genuinely supported, landed pork as the launching clearance.
 // Including still-falling slices produced an endless vertical chain in the sky.
 let spawnH=.78;for(const p of bodies){if(p.escaped||!(p.fixed||p.supported)||p.age<.20)continue;
@@ -313,20 +313,19 @@ function drawAim(){const a=aim(),at=projection({...a,h:0});ctx.save();
   const t=i*PI*2/segments,u=(i+1)*PI*2/segments;
   const p=projection({...aimAt(t),h:0});
   const q=projection({...aimAt(u),h:0});
-  ctx.strokeStyle=bowlDist(aimAt((t+u)*.5))>=PHY.escape?'#ff867265':'#fbe7ae4c';
+  ctx.strokeStyle='#fbe7ae4c';
   ctx.beginPath();ctx.moveTo(p.x,p.y);ctx.lineTo(q.x,q.y);ctx.stroke();
  }
  ctx.setLineDash([]);
- const danger=bowlDist(a)>=PHY.escape;
- ctx.lineWidth=3;ctx.strokeStyle=danger?'#ff7c68':'#fff2b9';
+ ctx.lineWidth=3;ctx.strokeStyle='#fff2b9';
  ctx.beginPath();ctx.ellipse(at.x,at.y,geom().r*1.0,geom().r*.59,0,0,PI*2);ctx.stroke();
- ctx.fillStyle=danger?'#ff7c68':'#fff2b9';ctx.beginPath();ctx.arc(at.x,at.y,3,0,PI*2);ctx.fill();ctx.restore();}
+ ctx.fillStyle='#fff2b9';ctx.beginPath();ctx.arc(at.x,at.y,3,0,PI*2);ctx.fill();ctx.restore();}
 function drawFeedback(){
  // Brief impact rings communicate the exact drop and landing without extra text.
  if(shotPulse){const life=(now-shotPulse.at)/190;
   if(life>=1)shotPulse=null;
   else if(life>=0){const q=projection({...shotPulse,h:0});ctx.save();ctx.globalAlpha=.8*(1-life);
-   ctx.lineWidth=2.5;ctx.strokeStyle=shotPulse.danger?'#ff917d':'#ffe7a8';ctx.beginPath();
+   ctx.lineWidth=2.5;ctx.strokeStyle='#ffe7a8';ctx.beginPath();
    ctx.ellipse(q.x,q.y,geom().r*(.6+life*.7),geom().r*(.35+life*.38),0,0,PI*2);ctx.stroke();ctx.restore();}}
  for(let i=landPulses.length-1;i>=0;i--){const p=landPulses[i],life=(now-p.at)/270;
   if(life>=1){landPulses.splice(i,1);continue;}
