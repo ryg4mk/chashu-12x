@@ -6,6 +6,8 @@ const el={score:$('score'),best:$('best'),total:$('total'),overlay:$('overlay'),
 const min=Math.min,max=Math.max,PI=Math.PI;
 const clamp=(v,a,b)=>max(a,min(b,v));
 const money=n=>Math.round(n).toLocaleString('ja-JP')+'円';
+// The special ramen includes its first six slices; only extras cost 70 yen.
+const priceFor=count=>RAMEN+max(0,count-BASE)*SLICE;
 const rand=(a,b)=>a+Math.random()*(b-a);
 let W=360,H=510,dpr=1,stage='menu',bodies=[],score=BASE,best=BASE;
 let now=0,prev=0,orbitAngle=-PI*.55,holding=false,heldPointer=null,holdStart=0,lastFire=-1e6,shot=0;
@@ -41,13 +43,13 @@ function make(x,z,h=0,options={}){return{x,z,h,vx:options.vx||0,vz:options.vz||0
  fixed:!!options.fixed,stableFor:0,supported:!!options.fixed,supporter:null,prevH:h};}
 function initial(){const a=[[-.49,-.36],[-.16,-.48],[.25,-.39],[.52,-.15],[-.32,.30],[.20,.27]];
 return a.map(([x,z],i)=>make(x,z,0,{seed:11+i*17,credited:true,fixed:true}));}
-function hud(){el.score.innerHTML=score+'<span class="unit">枚</span>';el.best.innerHTML=best+'<span class="unit">枚</span>';el.total.textContent=money(RAMEN+score*SLICE);}
+function hud(){el.score.innerHTML=score+'<span class="unit">枚</span>';el.best.innerHTML=best+'<span class="unit">枚</span>';el.total.textContent=money(priceFor(score));}
 function stopHold(){holding=false;heldPointer=null;}
 function start(){stopHold();stage='play';bodies=initial();score=BASE;orbitAngle=-PI*.55;shot=0;lastFire=-1e6;failPiece=null;settleTime=0;flash=null;shotPulse=null;landPulses=[];
 el.label.textContent='特製チャーシューメン';el.title.classList.remove('result-title');el.overlay.classList.add('hidden');hud();}
 function factor(n){return (Math.round(n/BASE*100)/100).toString();}
 function payment(n){return Math.ceil(n/1000)*1000;}
-function finish(){if(stage==='over')return;stage='over';stopHold();const cost=RAMEN+score*SLICE,pay=payment(cost);
+function finish(){if(stage==='over')return;stage='over';stopHold();const cost=priceFor(score),pay=payment(cost);
 el.label.textContent='ゲームオーバー';el.title.classList.add('result-title');el.title.innerHTML=`チャーシューメン、<br>チャーシュー${factor(score)}倍！？`;
 el.info.textContent=`${score}枚`;el.details.hidden=false;
 el.details.innerHTML=`<div><span>チャーシュー重量</span><b>${score*GRAMS}g</b></div><div><span>チャーシューの厚み</span><b>${score*MM}mm</b></div><div><span>お会計</span><b>${money(cost)}</b></div><div><span>お預かり</span><b>${money(pay)}</b></div><div class="change"><span>お釣り</span><b>${money(pay-cost)}</b></div>`;
@@ -71,18 +73,6 @@ window.addEventListener('blur',stopHold);document.addEventListener('visibilitych
 window.addEventListener('keydown',e=>{if((e.code==='Space'||e.code==='Enter')&&!['BUTTON','INPUT','TEXTAREA'].includes(document.activeElement?.tagName)){
 e.preventDefault();if(stage==='play'&&!e.repeat)fire();else if(stage!=='play')start();}});
 el.start.addEventListener('click',start);el.restart.addEventListener('click',start);
-
-const RECORD_KEYS=['chashu-best-v3','chashu12x-best','chashu-physics-best','chashu12x-best'];
-function clearSavedRecord(){
- if(!window.confirm('この端末のチャーシューメンの最高記録を消しますか？\nプレイ中のゲームも最初からになります。'))return;
- try{for(const key of RECORD_KEYS)localStorage.removeItem(key);}
- catch{window.alert('このブラウザでは記録を削除できませんでした。');return;}
- best=BASE;
- start(); // Prevent the current run from immediately writing back the previous best.
- const button=$('clear-record');button.textContent='記録を削除しました';
- window.setTimeout(()=>{button.textContent='最高記録を消す';},1800);
-}
-$('clear-record').addEventListener('click',clearSavedRecord);
 
 // 2.5D disc physics: every body has horizontal position and height. A settled
 // body becomes a static collider, NOT a decorative image. Falling pieces must
