@@ -1,6 +1,8 @@
 (()=>{'use strict';
 // Chashu 12x — horizontal timing sweep with continuous 2.5D physics.
+// Only homepage iframe previews bypass the start overlay.
 const BASE=6, RAMEN=950, SLICE=70, GRAMS=12, MM=7;
+const PREVIEW_MODE=new URLSearchParams(window.location.search).get('preview')==='1';
 const canvas=document.getElementById('game');let ctx=canvas.getContext('2d');const $=id=>document.getElementById(id);
 const el={score:$('score'),best:$('best'),total:$('total'),overlay:$('overlay'),label:$('panel-label'),title:$('panel-title'),info:$('panel-info'),details:$('result-detail'),start:$('start'),restart:$('restart')};
 const min=Math.min,max=Math.max,PI=Math.PI;
@@ -287,5 +289,5 @@ function frame(ts){const dt=clamp(ts-prev||16,0,34);prev=ts;now=ts;
  }
  draw();requestAnimationFrame(frame);
 }
-bodies=initial();hud();requestAnimationFrame(frame);
+bodies=initial();hud();if(PREVIEW_MODE)start();requestAnimationFrame(frame);
 })();
