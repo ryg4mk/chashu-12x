@@ -64,11 +64,11 @@ button{font-family:inherit;cursor:pointer;touch-action:manipulation}
 <button id="start" class="primary" type="button">ゲームスタート</button>
 </div></div>
 </section>
-<div class="bottom"><span class="controls">タップ：1枚 ／ 長押し：楕円周回投下</span><button class="reset" id="restart" type="button">やり直す</button></div>
+<div class="bottom"><span class="controls">タップ：1枚 ／ 長押し：左右に連続投下</span><button class="reset" id="restart" type="button">やり直す</button></div>
 </main>
 <script>
 (()=>{'use strict';
-// Chashu 12x — orbit-aimed, continuous 2.5D pork-slice physics.
+// Chashu 12x — horizontal timing sweep with continuous 2.5D physics.
 const BASE=6, RAMEN=950, SLICE=70, GRAMS=12, MM=7;
 const canvas=document.getElementById('game');let ctx=canvas.getContext('2d');const $=id=>document.getElementById(id);
 const el={score:$('score'),best:$('best'),total:$('total'),overlay:$('overlay'),label:$('panel-label'),title:$('panel-title'),info:$('panel-info'),details:$('result-detail'),start:$('start'),restart:$('restart')};
@@ -79,11 +79,16 @@ const money=n=>Math.round(n).toLocaleString('ja-JP')+'円';
 const priceFor=count=>RAMEN+max(0,count-BASE)*SLICE;
 const rand=(a,b)=>a+Math.random()*(b-a);
 let W=360,H=510,dpr=1,stage='menu',bodies=[],score=BASE,best=BASE;
-let now=0,prev=0,orbitAngle=-PI*.55,holding=false,heldPointer=null,holdStart=0,lastFire=-1e6,shot=0;
+let now=0,prev=0,sweepX=0,sweepDir=1,holding=false,heldPointer=null,holdStart=0,lastFire=-1e6,shot=0;
 let staticLayer=null,sprites=[],failPiece=null,frameCount=0,settleTime=0,flash=null,slowFrame=0;
 let shotPulse=null,landPulses=[];
 const TEMPO={startSpeed:1.90,speedPerSlice:.012,maxBonus:.67,shotDelay:235,holdDelay:175,tapDelay:95};
-function orbitSpeed(){return TEMPO.startSpeed;}
+// World-radius units per second: one crossing in about 1.4 seconds.
+const SWEEP={edge:1.13,speed:1.58};
+function advanceSweep(dt){sweepX+=sweepDir*SWEEP.speed*dt/1000;
+ if(sweepX>SWEEP.edge){sweepX=2*SWEEP.edge-sweepX;sweepDir=-1;}
+ else if(sweepX<-SWEEP.edge){sweepX=-2*SWEEP.edge-sweepX;sweepDir=1;}}
+
 try{best=max(BASE,Number(localStorage.getItem('chashu-best-v3'))||BASE)}catch{}
 function geom(){return{cx:W*.5,rim:H*.685,rx:W*.34,ry:H*.105,r:W*.054};}
 // World-space: x/depth z are elliptical-bowl radii; height h is above the soup.
@@ -95,11 +100,9 @@ const RECENT_MOVABLE=10;
 // contact. Shallow overhangs glide off instead of becoming solid staircases.
 const PHY={gravity:8.2,planeDrag:.94,contact:.33,thickness:.078,escape:1.025,
  supportRadius:.185,stableRadius:.090,edgeSlide:.73,freezeAfter:.8,steadyFor:.34};
-// Smooth fixed ellipse. Only the left and right tips go just beyond the rim.
-// This removes the alternating radial wave and keeps the speed predictable.
-const ORBIT={major:1.05,minor:.76};
-function aimAt(angle){return {x:Math.cos(angle)*ORBIT.major,z:Math.sin(angle)*ORBIT.minor};}
-function aim(){return aimAt(orbitAngle);}
+// Horizontal traversal across the whole bowl, including its center.
+// Only a small portion at either end lies beyond the physical rim.
+function aim(){return {x:sweepX,z:0};}
 function projection(p){const g=geom();const perspective=1+clamp(p.z,-1.3,1.3)*.055;
 return{x:g.cx+p.x*g.rx,y:g.rim+p.z*g.ry-(p.h||0)*H*.18,r:g.r*perspective};}
 function bowlDist(p){return Math.hypot(p.x,p.z);}
@@ -114,7 +117,7 @@ function initial(){const a=[[-.49,-.36],[-.16,-.48],[.25,-.39],[.52,-.15],[-.32,
 return a.map(([x,z],i)=>make(x,z,0,{seed:11+i*17,credited:true,fixed:true}));}
 function hud(){el.score.innerHTML=score+'<span class="unit">枚</span>';el.best.innerHTML=best+'<span class="unit">枚</span>';el.total.textContent=money(priceFor(score));}
 function stopHold(){holding=false;heldPointer=null;}
-function start(){stopHold();stage='play';bodies=initial();score=BASE;orbitAngle=-PI*.55;shot=0;lastFire=-1e6;failPiece=null;settleTime=0;flash=null;shotPulse=null;landPulses=[];
+function start(){stopHold();stage='play';bodies=initial();score=BASE;sweepX=0;sweepDir=1;shot=0;lastFire=-1e6;failPiece=null;settleTime=0;flash=null;shotPulse=null;landPulses=[];
 el.label.textContent='特製チャーシューメン';el.title.classList.remove('result-title');el.overlay.classList.add('hidden');hud();}
 function factor(n){return (Math.round(n/BASE*100)/100).toString();}
 function payment(n){return Math.ceil(n/1000)*1000;}
@@ -130,7 +133,7 @@ lastFire=now;const a=aim();shotPulse={x:a.x,z:a.z,at:now};
 let spawnH=.78;for(const p of bodies){if(p.escaped||!(p.fixed||p.supported)||p.age<.20)continue;
  if(Math.hypot(p.x-a.x,p.z-a.z)<PHY.supportRadius)spawnH=max(spawnH,p.h+.27);}
 const next=make(a.x,a.z,spawnH,{
- vx:-Math.sin(orbitAngle)*.042,vz:Math.cos(orbitAngle)*.042,vh:0,angle:rand(-.20,.20)});
+ vx:sweepDir*.018,vz:0,vh:0,angle:rand(-.20,.20)});
 bodies.push(next);shot++;}
 function credit(p){if(p.credited||p.escaped)return;p.credited=true;landPulses.push({x:p.x,z:p.z,h:p.h,at:now});score++;if(score>best){best=score;try{localStorage.setItem('chashu-best-v3',String(best))}catch{}}hud();}
 function pointerDown(e){if(stage!=='play'||holding)return;e.preventDefault();holding=true;heldPointer=e.pointerId;holdStart=now;fire();try{canvas.setPointerCapture(e.pointerId)}catch{}}
@@ -308,20 +311,13 @@ function rimFront(){const g=geom(),c=g.cx,y=g.rim,rx=g.rx,ry=g.ry;
 ctx.beginPath();ctx.ellipse(c,y,rx,ry,0,.015,Math.PI-.015);ctx.strokeStyle='#fff7e4';ctx.lineWidth=8;ctx.stroke();ctx.beginPath();ctx.ellipse(c,y+2,rx*.979,ry*.95,0,.018,Math.PI-.018);ctx.strokeStyle='#ac4636';ctx.lineWidth=2.1;ctx.stroke();}
 
 function drawAim(){const a=aim(),at=projection({...a,h:0});ctx.save();
- // Guide: golden arcs are over the bowl; red arcs are beyond the rim.
- // Keep the guide subtle and cheap to draw at mobile resolutions.
- ctx.lineWidth=1.35;ctx.setLineDash([4,6]);
- const segments=72;
- for(let i=0;i<segments;i++){
-  const t=i*PI*2/segments,u=(i+1)*PI*2/segments;
-  const p=projection({...aimAt(t),h:0});
-  const q=projection({...aimAt(u),h:0});
-  ctx.strokeStyle='#fbe7ae4c';
-  ctx.beginPath();ctx.moveTo(p.x,p.y);ctx.lineTo(q.x,q.y);ctx.stroke();
- }
+ // One visible horizontal guide passing through the center of the soup.
+ const left=projection({x:-SWEEP.edge,z:0,h:0}),right=projection({x:SWEEP.edge,z:0,h:0});
+ ctx.strokeStyle='#fbe7ae4c';ctx.lineWidth=1.4;ctx.setLineDash([4,6]);
+ ctx.beginPath();ctx.moveTo(left.x,left.y);ctx.lineTo(right.x,right.y);ctx.stroke();
  ctx.setLineDash([]);
  ctx.lineWidth=3;ctx.strokeStyle='#fff2b9';
- ctx.beginPath();ctx.ellipse(at.x,at.y,geom().r*1.0,geom().r*.59,0,0,PI*2);ctx.stroke();
+ ctx.beginPath();ctx.ellipse(at.x,at.y,geom().r,geom().r*.59,0,0,PI*2);ctx.stroke();
  ctx.fillStyle='#fff2b9';ctx.beginPath();ctx.arc(at.x,at.y,3,0,PI*2);ctx.fill();ctx.restore();}
 function drawFeedback(){
  // Brief impact rings communicate the exact drop and landing without extra text.
@@ -350,8 +346,8 @@ function draw(){ctx.clearRect(0,0,W,H);if(staticLayer)ctx.drawImage(staticLayer,
 }
 function frame(ts){const dt=clamp(ts-prev||16,0,34);prev=ts;now=ts;
  if(stage==='play'){
- // Rotate automatically regardless of whether the pointer moves.
- orbitAngle+=(dt/1000)*orbitSpeed();
+ // Sweep back and forth at a steady speed, passing through the bowl center.
+ advanceSweep(dt);
  if(holding&&now-holdStart>=TEMPO.holdDelay&&now-lastFire>=TEMPO.shotDelay)fire();
  }
  if(stage==='play'||stage==='spill'){
