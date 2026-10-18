@@ -71,6 +71,19 @@ window.addEventListener('blur',stopHold);document.addEventListener('visibilitych
 window.addEventListener('keydown',e=>{if((e.code==='Space'||e.code==='Enter')&&!['BUTTON','INPUT','TEXTAREA'].includes(document.activeElement?.tagName)){
 e.preventDefault();if(stage==='play'&&!e.repeat)fire();else if(stage!=='play')start();}});
 el.start.addEventListener('click',start);el.restart.addEventListener('click',start);
+
+const RECORD_KEYS=['chashu-best-v3','chashu12x-best','chashu-physics-best','chashu12x-best'];
+function clearSavedRecord(){
+ if(!window.confirm('この端末のチャーシューメンの最高記録を消しますか？\nプレイ中のゲームも最初からになります。'))return;
+ try{for(const key of RECORD_KEYS)localStorage.removeItem(key);}
+ catch{window.alert('このブラウザでは記録を削除できませんでした。');return;}
+ best=BASE;
+ start(); // Prevent the current run from immediately writing back the previous best.
+ const button=$('clear-record');button.textContent='記録を削除しました';
+ window.setTimeout(()=>{button.textContent='最高記録を消す';},1800);
+}
+$('clear-record').addEventListener('click',clearSavedRecord);
+
 // 2.5D disc physics: every body has horizontal position and height. A settled
 // body becomes a static collider, NOT a decorative image. Falling pieces must
 // physically land on soup or on discs underneath them. Unsupported overhangs
