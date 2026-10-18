@@ -44,6 +44,10 @@ button{font-family:inherit;cursor:pointer;touch-action:manipulation}
 .reset{background:#3d2519;border:1px solid #9f754f;color:#ffdfb1;padding:9px 14px;border-radius:99px;font-size:12px;font-weight:800;white-space:nowrap;flex-shrink:0}
 @media(max-width:380px){#app{padding:10px 8px}.stage{max-height:none}.stat{padding:6px 6px}.stat small{font-size:9px}.controls{font-size:11px}.panel{padding:19px 12px}}
 @media(max-height:700px){#app{gap:6px}.stage{max-height:74dvh}.header{padding:0}.bottom{padding-top:0}}
+
+.record-settings{display:flex;justify-content:flex-end;margin-top:-7px;padding:0 5px}
+.clear-record{border:0;background:transparent;color:#d7b393;padding:6px 8px;font-size:11px;text-decoration:underline;text-underline-offset:3px}
+.clear-record:focus-visible{outline:2px solid #ffe6ac;outline-offset:2px;border-radius:6px}
 </style>
 </head>
 <body>
@@ -65,6 +69,7 @@ button{font-family:inherit;cursor:pointer;touch-action:manipulation}
 </div></div>
 </section>
 <div class="bottom"><span class="controls">タップ：1枚 ／ 長押し：楕円周回投下</span><button class="reset" id="restart" type="button">やり直す</button></div>
+<div class="record-settings"><button class="clear-record" id="clear-record" type="button">最高記録を消す</button></div>
 </main>
 <script>
 (()=>{'use strict';
@@ -140,6 +145,19 @@ window.addEventListener('blur',stopHold);document.addEventListener('visibilitych
 window.addEventListener('keydown',e=>{if((e.code==='Space'||e.code==='Enter')&&!['BUTTON','INPUT','TEXTAREA'].includes(document.activeElement?.tagName)){
 e.preventDefault();if(stage==='play'&&!e.repeat)fire();else if(stage!=='play')start();}});
 el.start.addEventListener('click',start);el.restart.addEventListener('click',start);
+
+const RECORD_KEYS=['chashu-best-v3','chashu12x-best','chashu-physics-best','chashu12x-best'];
+function clearSavedRecord(){
+ if(!window.confirm('この端末のチャーシューメンの最高記録を消しますか？\nプレイ中のゲームも最初からになります。'))return;
+ try{for(const key of RECORD_KEYS)localStorage.removeItem(key);}
+ catch{window.alert('このブラウザでは記録を削除できませんでした。');return;}
+ best=BASE;
+ start(); // Prevent the current run from immediately writing back the previous best.
+ const button=$('clear-record');button.textContent='記録を削除しました';
+ window.setTimeout(()=>{button.textContent='最高記録を消す';},1800);
+}
+$('clear-record').addEventListener('click',clearSavedRecord);
+
 // 2.5D disc physics: every body has horizontal position and height. A settled
 // body becomes a static collider, NOT a decorative image. Falling pieces must
 // physically land on soup or on discs underneath them. Unsupported overhangs
