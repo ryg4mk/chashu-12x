@@ -45,7 +45,6 @@ button{font-family:inherit;cursor:pointer;touch-action:manipulation}
 @media(max-width:380px){#app{padding:10px 8px}.stage{max-height:none}.stat{padding:6px 6px}.stat small{font-size:9px}.controls{font-size:11px}.panel{padding:19px 12px}}
 @media(max-height:700px){#app{gap:6px}.stage{max-height:74dvh}.header{padding:0}.bottom{padding-top:0}}
 </style>
-</style>
 </head>
 <body>
 <main id="app">
@@ -73,7 +72,7 @@ const BASE=6, RAMEN=950, SLICE=70, GRAMS=12, MM=7;
 const canvas=document.getElementById('game'),ctx=canvas.getContext('2d'),$=id=>document.getElementById(id);
 const el={score:$('score'),best:$('best'),total:$('total'),overlay:$('overlay'),label:$('panel-label'),title:$('panel-title'),info:$('panel-info'),details:$('result-detail'),start:$('start'),restart:$('restart')};
 let W=360,H=510,dpr=1,stage='menu',bodies=[],score=BASE,best=BASE;
-let now=0,prev=0,aim=0,dir=1,holding=false,holdStart=0,lastFire=-Infinity,heldPointer=null,ended=false;
+let now=0,prev=0,aim=0,dir=1,holding=false,holdStart=0,lastFire=-Infinity,heldPointer=null,ended=false,shots=0;
 let lastFrameError=false;
 try{best=Math.max(BASE,Number(localStorage.getItem('chashu-best-v3'))||BASE)}catch{}
 const min=(a,b)=>Math.min(a,b),max=(a,b)=>Math.max(a,b),clamp=(n,a,b)=>max(a,min(b,n));
@@ -81,14 +80,19 @@ const money=n=>Math.round(n).toLocaleString('ja-JP')+'円';
 const rand=(a,b)=>a+Math.random()*(b-a);
 const geom=()=>({cx:W*.5,rim:H*.685,rx:W*.34,ry:H*.105,floor:H*.672,r:W*.054});
 function resize(){const oldW=W,oldH=H,r=canvas.getBoundingClientRect();W=max(1,r.width);H=max(1,r.height);dpr=min(2,window.devicePixelRatio||1);canvas.width=Math.round(W*dpr);canvas.height=Math.round(H*dpr);ctx.setTransform(dpr,0,0,dpr,0,0);
-if(bodies.length&&oldW&&oldH){for(const p of bodies){p.x*=W/oldW;p.y*=H/oldH;p.r*=W/oldW;p.vx*=W/oldW;p.vy*=H/oldH;}}}
+if(bodies.length&&oldW&&oldH){for(const p of bodies){p.x*=W/oldW;p.y*=H/oldH;p.r*=W/oldW;p.vx*=W/oldW;p.vy*=H/oldH;p.z*=H/oldH;if(p.settled)p.y=geom().rim+p.z;}}}
 if(window.ResizeObserver)new ResizeObserver(resize).observe(canvas);else window.addEventListener('resize',resize);resize();
-function initial(){const g=geom(),r=g.r;
-return [[-2.85,0],[-.95,0],[.95,0],[2.85,0],[-.9,1.67],[.98,1.67]].map(([x,z],i)=>newBody(g.cx+x*r,g.floor-r-z*r,{fixed:true,settled:true,seed:31+i*12}));}
-function newBody(x,y,opt={}){return{x,y,vx:opt.vx||0,vy:opt.vy||0,r:geom().r,angle:rand(-.33,.33),omega:rand(-.4,.4),seed:opt.seed??rand(0,100),fixed:!!opt.fixed,settled:!!opt.settled,age:0,near:false,spilled:false};}
+// A horizontal, lightly overlapping arrangement on the soup surface.
+// Each pork slice stays in the bowl's 2D surface plane; no vertical towers.
+function initial(){const g=geom();
+const positions=[[-.60,-.39],[-.20,-.50],[.21,-.48],[.60,-.34],[-.34,.36],[.34,.34]];
+return positions.map(([x,z],i)=>newBody(g.cx+x*g.rx*.82,g.rim+z*g.ry*.76,{fixed:true,settled:true,z:z*g.ry*.76,seed:31+i*12}));}
+function newBody(x,y,opt={}){return{x,y,vx:opt.vx||0,vy:opt.vy||0,vz:0,z:opt.z||0,r:geom().r,angle:rand(-.25,.25),omega:rand(-.35,.35),seed:opt.seed??rand(0,100),fixed:!!opt.fixed,settled:!!opt.settled,age:0,spilled:false};}
+function inBowl(p,margin=1){const g=geom();const dx=(p.x-g.cx)/(g.rx*.83),dz=p.z/(g.ry*.72);return dx*dx+dz*dz<=margin*margin;}
+
 function hud(){el.score.innerHTML=score+'<span class="unit">枚</span>';el.best.innerHTML=best+'<span class="unit">枚</span>';el.total.textContent=money(RAMEN+score*SLICE);}
 function cleanHold(){holding=false;heldPointer=null;}
-function start(){cleanHold();stage='play';ended=false;bodies=initial();score=BASE;aim=0;dir=1;lastFire=-Infinity;el.overlay.classList.add('hidden');hud();}
+function start(){cleanHold();stage='play';ended=false;bodies=initial();score=BASE;aim=0;dir=1;shots=0;lastFire=-Infinity;el.overlay.classList.add('hidden');hud();}
 function factor(n){return (Math.round(n/BASE*100)/100).toString();}
 function payment(total){return Math.ceil(total/1000)*1000;}
 function end(){if(ended||stage!=='play')return;ended=true;stage='over';cleanHold();const total=RAMEN+score*SLICE,pay=payment(total);
@@ -96,42 +100,53 @@ el.label.textContent='ゲームオーバー';el.title.classList.add('result-titl
 el.info.textContent=`${score}枚`;el.details.hidden=false;el.details.innerHTML=`<div><span>チャーシュー重量</span><b>${score*GRAMS}g</b></div><div><span>チャーシューの厚み</span><b>${score*MM}mm</b></div><div><span>お会計</span><b>${money(total)}</b></div><div><span>お預かり</span><b>${money(pay)}</b></div><div class="change"><span>お釣り</span><b>${money(pay-total)}</b></div>`;
 el.start.textContent='もう一度';el.overlay.classList.remove('hidden');}
 function fire(){if(stage!=='play'||now-lastFire<105)return;lastFire=now;const g=geom();
-const highest=bodies.reduce((n,p)=>min(n,p.y),g.rim);let spawnY=min(H*.405,highest-g.r*4.6);
-spawnY=max(-H*.45,spawnY);bodies.push(newBody(g.cx+aim*g.rx*.69,spawnY,{vx:dir*rand(4,11),vy:rand(0,15)}));}
+// Distribute shots between near and far sides of the ramen surface.
+// This retains the original flat, shingled arrangement instead of a tower.
+const lanes=[-.34,.35,-.03,-.48,.25,.06,.48,-.21];
+const z=(lanes[shots%lanes.length]+rand(-.08,.08))*g.ry*.65;
+const x=g.cx+aim*g.rx*.76;
+shots++;
+const p=newBody(x,H*.48,{vx:dir*rand(0,4),vy:0,z});
+bodies.push(p);}
+
 function ptrDown(e){if(stage!=='play')return;e.preventDefault();if(holding)return;holding=true;heldPointer=e.pointerId;holdStart=now;lastFire=-Infinity;fire();try{canvas.setPointerCapture(e.pointerId)}catch{}}
 function ptrUp(e){if(heldPointer===null||e.pointerId===heldPointer)cleanHold();}
 canvas.addEventListener('pointerdown',ptrDown);canvas.addEventListener('pointerup',ptrUp);canvas.addEventListener('pointercancel',ptrUp);canvas.addEventListener('lostpointercapture',ptrUp);window.addEventListener('pointerup',ptrUp);
 window.addEventListener('blur',cleanHold);document.addEventListener('visibilitychange',()=>{if(document.hidden)cleanHold()});
 window.addEventListener('keydown',e=>{if((e.code==='Space'||e.code==='Enter')&&!['BUTTON','INPUT','TEXTAREA'].includes(document.activeElement?.tagName)){e.preventDefault();if(stage==='play'&&!e.repeat)fire();else if(stage!=='play')start();}});
 el.start.addEventListener('click',start);el.restart.addEventListener('click',start);
-function physics(dt){const g=geom();const step=dt/1000,gravity=780;
-// Position integration, with low bounce and velocity damping to encourage stable stacks.
-for(const p of bodies){if(p.fixed||p.spilled)continue;p.age+=dt;p.vy=clamp(p.vy+gravity*step,-180,470);p.x+=p.vx*step;p.y+=p.vy*step;p.angle+=p.omega*step;p.omega*=.975;p.vx*=.983;
-// Wide soup surface holds pieces whose centres are inside the bowl.
-if(p.y+p.r>g.floor && Math.abs(p.x-g.cx)<g.rx-p.r*.20){p.y=g.floor-p.r;if(p.vy>0)p.vy=-p.vy*.045;p.vx*=.82;p.near=true;markLanded(p);}
+function physics(dt){const g=geom(),step=dt/1000;
+// Falling slices contact the bowl's flat soup plane, not previous slices' tops.
+for(const p of bodies){if(p.fixed||p.spilled)continue;p.age+=dt;
+if(!p.settled){p.vy=clamp(p.vy+1250*step,0,650);p.x+=p.vx*step;p.y+=p.vy*step;
+p.angle+=p.omega*step*.18;
+if(p.y>=g.rim+p.z){p.y=g.rim+p.z;p.vy=0;p.vx*=.13;p.omega=0;
+if(!inBowl(p,1.08)){p.spilled=true;end();return;}markLanded(p);}}
+else{p.x+=p.vx*step;p.z+=p.vz*step;p.y=g.rim+p.z;
+// Very mild tabletop physics: gliding, friction, and gentle centering.
+p.vx*=.90;p.vz*=.90;
+p.vx+=(g.cx-p.x)*.08*step;p.vz+=(-p.z)*.04*step;
+p.vx=clamp(p.vx,-48,48);p.vz=clamp(p.vz,-26,26);}
 }
-// Several iterations reduce penetration and make landing forgiving.
-for(let iteration=0;iteration<4;iteration++){
-for(let i=0;i<bodies.length;i++){const a=bodies[i];for(let j=i+1;j<bodies.length;j++){const b=bodies[j];if(a.fixed&&b.fixed)continue;
-const dx=b.x-a.x,dy=b.y-a.y,dist2=dx*dx+dy*dy,rr=a.r+b.r;if(dist2>=rr*rr)continue;
-const d=Math.sqrt(dist2)||.0001,nx=dx/d,ny=dy/d,overlap=rr-d;
-let ma=a.fixed?0:1,mb=b.fixed?0:1,sum=ma+mb;if(!sum)continue;
-a.x-=nx*overlap*ma/sum*.92;a.y-=ny*overlap*ma/sum*.92;b.x+=nx*overlap*mb/sum*.92;b.y+=ny*overlap*mb/sum*.92;
-const rel=(b.vx-a.vx)*nx+(b.vy-a.vy)*ny;if(rel<0){const impulse=(-rel*.52)/sum;a.vx-=impulse*nx*ma;a.vy-=impulse*ny*ma;b.vx+=impulse*nx*mb;b.vy+=impulse*ny*mb;}
-if(ny>-.35&&ny<.35){/* mostly lateral collisions stay soft */}
-if(!a.fixed){a.vx*=.90;a.vy*=.95;}if(!b.fixed){b.vx*=.90;b.vy*=.95;}
-if(a.settled||a.fixed)markLanded(b);if(b.settled||b.fixed)markLanded(a);
+// Overlap is intentional, like overlapping chashu slices on noodles.
+// Only a soft planar repulsion is applied; slices never prop each other up.
+for(let k=0;k<2;k++){
+for(let i=0;i<bodies.length;i++){const a=bodies[i];if(!a.settled||a.spilled)continue;
+for(let j=i+1;j<bodies.length;j++){const b=bodies[j];if(!b.settled||b.spilled||a.fixed&&b.fixed)continue;
+const dx=b.x-a.x,dz=b.z-a.z,dist=Math.hypot(dx,dz)||.00001;
+const gap=(a.r+b.r)*.43;if(dist>=gap)continue;
+const nx=dx/dist,nz=dz/dist,overlap=(gap-dist)*.10;
+const ma=a.fixed||a.age>900?0:1,mb=b.fixed||b.age>900?0:1,sum=ma+mb;if(!sum)continue;
+a.x-=nx*overlap*ma/sum;a.z-=nz*overlap*ma/sum;
+b.x+=nx*overlap*mb/sum;b.z+=nz*overlap*mb/sum;
+if(!a.fixed){a.vx-=nx*.14;a.vz-=nz*.10;a.y=g.rim+a.z;}
+if(!b.fixed){b.vx+=nx*.14;b.vz+=nz*.10;b.y=g.rim+b.z;}
 }}
 }
-for(const p of bodies){if(p.fixed||p.spilled)continue;
-// Low energy pile stabilizer: small drift back toward the bowl centre, not a hard snap.
-if(p.settled){p.vx+=(g.cx-p.x)*.25*step;p.vx*=.93;}
-p.vx=clamp(p.vx,-85,85);
-// Spilled pieces must actually pass the bowl's rim before they trigger the result.
-if(p.y>g.rim-g.ry*.2 && Math.abs(p.x-g.cx)>g.rx+p.r*.27){p.spilled=true;end();return;}
-if(p.y>H+p.r){p.spilled=true;end();return;}
+for(const p of bodies){if(p.fixed||!p.settled||p.spilled)continue;
+if(!inBowl(p,1.10)){p.spilled=true;end();return;}}
 }
-}
+
 function markLanded(p){if(p.fixed||p.settled)return;p.settled=true;score++;if(score>best){best=score;try{localStorage.setItem('chashu-best-v3',String(best))}catch{}}hud();}
 function ellipse(x,y,rx,ry,color){ctx.beginPath();ctx.ellipse(x,y,max(.1,rx),max(.1,ry),0,0,Math.PI*2);if(color){ctx.fillStyle=color;ctx.fill()}}
 function strokeEllipse(x,y,rx,ry,color,width){ellipse(x,y,rx,ry);ctx.lineWidth=width;ctx.strokeStyle=color;ctx.stroke();}
@@ -147,7 +162,10 @@ ctx.shadowColor='#3017107c';ctx.shadowBlur=8;ctx.shadowOffsetX=2;rr(-bw/2,0,bw,b
 for(let k=0;k<3;k++){ctx.strokeStyle='#60341623';ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(-bw*.3+k*bw*.25,8);ctx.quadraticCurveTo(-bw*.20+k*bw*.22,boardH*.55,-bw*.3+k*bw*.25,boardH-7);ctx.stroke()}
 ellipse(0,11,2.5,2.5,'#4e2b1a');ellipse(-.65,10.4,.7,.7,'#e7c196');
 const n=words[i].length;const fs=min(bw*.45,boardH*.83/(n*.98));ctx.font=`900 ${fs}px "Yu Gothic",sans-serif`;ctx.fillStyle='#3a2118';ctx.textAlign='center';ctx.textBaseline='middle';
-let hh=fs*.98,top=boardH*.54-n*hh*.5;for(let j=0;j<n;j++)ctx.fillText(words[i][j],0,top+j*hh);ctx.restore();}
+let hh=fs*.98,top=boardH*.54-n*hh*.5;for(let j=0;j<n;j++){
+const ch=words[i][j];if(ch==='ー'){ctx.save();ctx.translate(0,top+j*hh);ctx.rotate(Math.PI/2);ctx.fillText(ch,0,0);ctx.restore();}
+else ctx.fillText(ch,0,top+j*hh);}
+ctx.restore();}
 }
 function counter(){const y=H*.635;let g=ctx.createLinearGradient(0,y,0,H);g.addColorStop(0,'#b37a47');g.addColorStop(.45,'#8b562f');g.addColorStop(1,'#52301d');ctx.fillStyle=g;ctx.fillRect(0,y,W,H-y);
 for(let k=0;k<11;k++){let yy=y+k*H*.037;ctx.beginPath();ctx.moveTo(0,yy);ctx.lineTo(W,yy+W*.035);ctx.lineWidth=1;ctx.strokeStyle=k%2?'#dfae7650':'#4b2d1952';ctx.stroke()}
@@ -175,21 +193,26 @@ ctx.save();ctx.translate(c-rx*.66,y-ry*.47);ctx.rotate(-.19);rr(-rx*.16,-ry*.22,
 // Gold ornament on ceramic face.
 ctx.strokeStyle='#f8c879';ctx.lineWidth=3;ctx.beginPath();ctx.arc(c,H*.858,rx*.13,Math.PI*.15,Math.PI*1.85);ctx.stroke();ellipse(c,H*.858,rx*.027,rx*.027,'#f8c879');
 }
-function meat(p){const r=p.r,angle=p.angle;
-ctx.save();ctx.translate(p.x,p.y);ctx.rotate(angle);ctx.shadowColor='#35100880';ctx.shadowBlur=r*.36;ctx.shadowOffsetY=r*.16;
-let g=ctx.createRadialGradient(-r*.2,-r*.25,r*.2,0,0,r*1.05);g.addColorStop(0,'#a84931');g.addColorStop(.68,'#9e3b29');g.addColorStop(1,'#5f241d');ellipse(0,0,r*1.03,r*.86,g);ctx.shadowColor='transparent';
-ellipse(0,-r*.08,r*.92,r*.74,'#e8a177');ellipse(r*.05,-r*.07,r*.70,r*.56,'#be6146');ellipse(-r*.12,-r*.06,r*.46,r*.39,'#d88a65');
-ctx.strokeStyle='#ffe0b9';ctx.lineWidth=max(2,r*.14);ctx.beginPath();ctx.ellipse(0,-r*.07,r*.85,r*.66,0,.03,Math.PI*1.98);ctx.stroke();
-ctx.strokeStyle='#f2bd8b';ctx.lineWidth=max(.8,r*.06);ctx.beginPath();ctx.arc(r*.09,-r*.06,r*.40,.4,4.9);ctx.stroke();
-for(let i=0;i<6;i++){let t=p.seed+i*2.24,rad=.2+(i%3)*.16;ellipse(Math.cos(t)*r*rad,Math.sin(t)*r*.45*rad,r*.077,r*.036,i%2?'#ffe9bf99':'#8b34286e')}
+function meat(p){const r=p.r;ctx.save();ctx.translate(p.x,p.y);ctx.rotate(p.angle);
+const shadow=ctx.createRadialGradient(2,r*.13,r*.1,0,0,r*1.1);shadow.addColorStop(0,'#41140a86');shadow.addColorStop(1,'#41140a00');ellipse(1,r*.17,r*1.18,r*.78,shadow);
+// Charred, glazed outer edge.
+let crust=ctx.createLinearGradient(0,-r*.79,0,r*.84);crust.addColorStop(0,'#97412c');crust.addColorStop(.55,'#a34930');crust.addColorStop(1,'#612c22');ellipse(0,0,r*1.10,r*.80,crust);
+// Irregular-looking ring of creamy fat and tender pink pork.
+ellipse(-r*.01,-r*.08,r*.99,r*.71,'#f3c49c');ellipse(r*.07,-r*.065,r*.85,r*.58,'#c77451');
+ellipse(-r*.10,-r*.08,r*.61,r*.47,'#db9671');
+ellipse(r*.10,-r*.04,r*.41,r*.34,'#bc6247');
+ctx.lineWidth=max(1.7,r*.105);ctx.strokeStyle='#ffe0b9';ctx.beginPath();ctx.ellipse(-r*.01,-r*.09,r*.94,r*.67,-.04,.22,Math.PI*1.85);ctx.stroke();
+ctx.lineWidth=max(.8,r*.035);ctx.strokeStyle='#a9503a85';ctx.beginPath();ctx.ellipse(-r*.08,-r*.08,r*.57,r*.42,.13,.2,5.7);ctx.stroke();
+for(let i=0;i<5;i++){const a=p.seed+i*2.2,rr=.22+(i%3)*.16;ellipse(Math.cos(a)*r*rr,Math.sin(a)*r*.36*rr,r*.075,r*.027,i%2?'#ffe1b277':'#a04c3a70')}
 ctx.restore();}
+
 function rimFront(){const g=geom(),c=g.cx,y=g.rim,rx=g.rx,ry=g.ry;
 ctx.beginPath();ctx.ellipse(c,y,rx,ry,0,.015,Math.PI-.015);ctx.strokeStyle='#fff7e4';ctx.lineWidth=8;ctx.stroke();ctx.beginPath();ctx.ellipse(c,y+2,rx*.979,ry*.95,0,.018,Math.PI-.018);ctx.strokeStyle='#ac4636';ctx.lineWidth=2.1;ctx.stroke();}
 function draw(){ctx.clearRect(0,0,W,H);woodWall();counter();bowlDrawing();
 // Each slice has its own shadow and fat marbling. Back pieces first.
 for(const p of [...bodies].sort((a,b)=>a.y-b.y))meat(p);rimFront();
-if(stage==='play'){const g=geom(),x=g.cx+aim*g.rx*.69,y=min(H*.405,bodies.reduce((n,p)=>min(n,p.y),g.rim)-g.r*4.6);const fake={x,y:max(-H*.45,y),r:g.r,angle:Math.sin(now*.004)*.09,seed:17};meat(fake);
-ctx.strokeStyle='#fce4b19c';ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(x,fake.y-g.r*.85);ctx.lineTo(x,fake.y-g.r*1.7);ctx.stroke();}
+if(stage==='play'){const g=geom(),x=g.cx+aim*g.rx*.76;const fake={x,y:H*.48,r:g.r,angle:Math.sin(now*.004)*.09,seed:17};meat(fake);
+ctx.strokeStyle='#fce4b19c';ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(x,fake.y-g.r*.85);ctx.lineTo(x,fake.y-g.r*1.55);ctx.stroke();}
 let shade=ctx.createRadialGradient(W/2,H/2,W*.20,W/2,H/2,W*.80);shade.addColorStop(0,'#0000');shade.addColorStop(1,'#1c080842');ctx.fillStyle=shade;ctx.fillRect(0,0,W,H);}
 function frame(ts){const dt=clamp(ts-prev||16,0,34);prev=ts;now=ts;
 if(stage==='play'){aim+=dir*dt*.00075;if(aim>.73){aim=.73;dir=-1}if(aim<-.73){aim=-.73;dir=1}
@@ -201,6 +224,7 @@ try{draw()}catch(e){if(!lastFrameError){lastFrameError=true;console.error('Rende
 requestAnimationFrame(frame)}
 bodies=initial();hud();requestAnimationFrame(frame);
 })();
+
 </script>
 </body>
 </html>
