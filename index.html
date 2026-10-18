@@ -85,8 +85,11 @@ function geom(){return{cx:W*.5,rim:H*.685,rx:W*.34,ry:H*.105,r:W*.054};}
 // Gravity and momentum operate on these positions; no scripted outward ejection.
 // Each slice is a shallow 3D disc. Settled slices become kinematic supports.
 // World units: one soup radius ~1, vertical thickness ~0.075.
+const RECENT_MOVABLE=10;
+// A disc needs substantial overlap to be supported, not just edge-to-edge
+// contact. Shallow overhangs glide off instead of becoming solid staircases.
 const PHY={gravity:5.9,planeDrag:.94,contact:.33,thickness:.078,escape:1.025,
- freezeAfter:1.60,steadyFor:.45,edgeSlide:.14};
+ supportRadius:.185,stableRadius:.090,edgeSlide:.73,freezeAfter:.8,steadyFor:.34};
 function aim(){return {x:Math.cos(orbitAngle)*orbitRadius,z:Math.sin(orbitAngle)*orbitRadius};}
 function projection(p){const g=geom();const perspective=1+clamp(p.z,-1.3,1.3)*.055;
 return{x:g.cx+p.x*g.rx*.86,y:g.rim+p.z*g.ry*.77-(p.h||0)*H*.18,r:g.r*perspective};}
@@ -97,7 +100,7 @@ if(window.ResizeObserver)new ResizeObserver(resize).observe(canvas);else window.
 function make(x,z,h=0,options={}){return{x,z,h,vx:options.vx||0,vz:options.vz||0,vh:options.vh||0,
  angle:options.angle??rand(-.2,.2),omega:options.omega??0,seed:options.seed??rand(0,100),
  resting:h<=0,escaped:false,fallingOut:false,credited:!!options.credited,age:0,
- fixed:!!options.fixed,stableFor:0,supported:false,prevH:h};}
+ fixed:!!options.fixed,stableFor:0,supported:!!options.fixed,supporter:null,prevH:h};}
 function initial(){const a=[[-.49,-.36],[-.16,-.48],[.25,-.39],[.52,-.15],[-.32,.30],[.20,.27]];
 return a.map(([x,z],i)=>make(x,z,0,{seed:11+i*17,credited:true,fixed:true}));}
 function hud(){el.score.innerHTML=score+'<span class="unit">枚</span>';el.best.innerHTML=best+'<span class="unit">枚</span>';el.total.textContent=money(RAMEN+score*SLICE);}
@@ -112,9 +115,10 @@ el.info.textContent=`${score}枚`;el.details.hidden=false;
 el.details.innerHTML=`<div><span>チャーシュー重量</span><b>${score*GRAMS}g</b></div><div><span>チャーシューの厚み</span><b>${score*MM}mm</b></div><div><span>お会計</span><b>${money(cost)}</b></div><div><span>お預かり</span><b>${money(pay)}</b></div><div class="change"><span>お釣り</span><b>${money(pay-cost)}</b></div>`;
 el.start.textContent='もう一度';el.overlay.classList.remove('hidden');}
 function fire(){if(stage!=='play'||now-lastFire<140)return;lastFire=now;const a=aim();
-// Start above the local pile, never materialize inside fixed upper layers.
-let spawnH=1.00;for(const p of bodies){if(p.escaped)continue;
- if(Math.hypot(p.x-a.x,p.z-a.z)<PHY.contact*.95)spawnH=max(spawnH,p.h+.40);}
+// Use only genuinely supported, landed pork as the launching clearance.
+// Including still-falling slices produced an endless vertical chain in the sky.
+let spawnH=1.00;for(const p of bodies){if(p.escaped||!(p.fixed||p.supported)||p.age<.20)continue;
+ if(Math.hypot(p.x-a.x,p.z-a.z)<PHY.supportRadius)spawnH=max(spawnH,p.h+.32);}
 const next=make(a.x,a.z,spawnH,{
  vx:-Math.sin(orbitAngle)*.042,vz:Math.cos(orbitAngle)*.042,vh:0,angle:rand(-.20,.20)});
 bodies.push(next);shot++;}
@@ -165,26 +169,25 @@ function physics(dt){const step=dt/1000,th=PHY.thickness;
   for(const j of neighbors(p)){if(j===i)continue;
    const q=bodies[j];if(q.escaped)continue;
    const dx=p.x-q.x,dz=p.z-q.z,d=Math.hypot(dx,dz);
-   if(d>=PHY.contact)continue;
-   // Consider a supporter only when it is geometrically below this slice.
-   // A higher slice never causes the falling slice to teleport upward.
-   // The supporter must be below the pre-step height. Otherwise
-   // neighboring slices could lift each other upward indefinitely.
+   // An overlap across nearly the whole slice is required to hold weight.
+   // A one-pixel edge overlap must NOT create a bridge in midair.
+   if(d>=PHY.supportRadius)continue;
    if(!q.fixed&&!q.supported)continue;
-   if(q.h+th*.40>p.prevH)continue;
-   const quality=1-d/PHY.contact;
-   const top=q.h+th*(.86+.14*quality);
-   if(top>floor){floor=top;support=q;supportQuality=quality;}
+   // Only a lower surface crossed while descending can support this body.
+   if(q.h+th*.48>p.prevH)continue;
+   const top=q.h+th;
+   if(top>floor){floor=top;support=q;supportQuality=d;}
   }
-  p.supported=false;
+  p.supported=false;p.supporter=null;
   if(floor!==-Infinity&&p.h<=floor&&p.vh<=0){
-   p.h=floor;p.vh=0;p.supported=true;p.resting=true;
-   // Weak outward slope on overhangs. Stable centered pieces do not slide.
-   if(support&&supportQuality<.64){
-    const dx=p.x-support.x,dz=p.z-support.z,d=Math.hypot(dx,dz)||1;
-    const excess=(.64-supportQuality)/.64;
-    const slope=PHY.edgeSlide*excess;
-    p.vx+=(dx/d)*slope*step;p.vz+=(dz/d)*slope*step;
+   p.h=floor;p.vh=0;p.supported=true;p.resting=true;p.supporter=support;
+   // A slanted pile is not a stable shelf. Its slices slowly slide toward
+   // the unsupported side, and gravity continues if they lose contact.
+   if(support&&supportQuality>PHY.stableRadius){
+    const dx=p.x-support.x,dz=p.z-support.z,d=supportQuality;
+    const t=(d-PHY.stableRadius)/(PHY.supportRadius-PHY.stableRadius);
+    const slide=PHY.edgeSlide*t*t;
+    p.vx+=(dx/d)*slide*step;p.vz+=(dz/d)*slide*step;
    }
    credit(p);
   }else{p.resting=false;}
@@ -192,9 +195,15 @@ function physics(dt){const step=dt/1000,th=PHY.thickness;
    p.resting=false;p.fixed=false;p.vh=min(p.vh,-.08);
    p.omega+=clamp(p.vx+p.vz,-.3,.3);continue;}
   const motion=Math.hypot(p.vx,p.vz);
-  p.stableFor=(p.supported&&motion<.060&&Math.abs(p.vh)<.001)
+  p.stableFor=(p.supported&&(!support||support.fixed)&&motion<.060&&Math.abs(p.vh)<.001)
    ?p.stableFor+step:0;
-  if(p.supported&&p.age>=PHY.freezeAfter&&p.stableFor>=PHY.steadyFor){
+  // Keep the newest 10 pieces fully dynamic. Even older slices must have
+  // settled on a real foundation; a drifting or suspended disc never locks.
+  const olderThanLatestTen=i < bodies.length-RECENT_MOVABLE;
+  const anchoredBelow=!support || support.fixed;
+  const centrallySupported=!support || supportQuality<=PHY.stableRadius;
+  if(olderThanLatestTen&&p.supported&&anchoredBelow&&centrallySupported
+     &&p.age>=PHY.freezeAfter&&p.stableFor>=PHY.steadyFor){
    p.fixed=true;p.vx=p.vz=p.vh=p.omega=0;p.stableFor=0;
   }
  }
