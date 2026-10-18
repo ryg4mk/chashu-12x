@@ -8,11 +8,11 @@ const clamp=(v,a,b)=>max(a,min(b,v));
 const money=n=>Math.round(n).toLocaleString('ja-JP')+'円';
 const rand=(a,b)=>a+Math.random()*(b-a);
 let W=360,H=510,dpr=1,stage='menu',bodies=[],score=BASE,best=BASE;
-let now=0,prev=0,orbitAngle=-PI*.55,orbitRadius=.99,holding=false,heldPointer=null,holdStart=0,lastFire=-1e6,shot=0;
-let staticLayer=null,sprites=[],driftPointerY=null,failPiece=null,frameCount=0,settleTime=0,flash=null,slowFrame=0;
+let now=0,prev=0,orbitAngle=-PI*.55,holding=false,heldPointer=null,holdStart=0,lastFire=-1e6,shot=0;
+let staticLayer=null,sprites=[],failPiece=null,frameCount=0,settleTime=0,flash=null,slowFrame=0;
 let shotPulse=null,landPulses=[];
 const TEMPO={startSpeed:1.90,speedPerSlice:.012,maxBonus:.67,shotDelay:235,holdDelay:175,tapDelay:95};
-function orbitSpeed(){return TEMPO.startSpeed+min(TEMPO.maxBonus,max(0,score-BASE)*TEMPO.speedPerSlice);}
+function orbitSpeed(){return TEMPO.startSpeed;}
 try{best=max(BASE,Number(localStorage.getItem('chashu-best-v3'))||BASE)}catch{}
 function geom(){return{cx:W*.5,rim:H*.685,rx:W*.34,ry:H*.105,r:W*.054};}
 // World-space: x/depth z are elliptical-bowl radii; height h is above the soup.
@@ -24,13 +24,13 @@ const RECENT_MOVABLE=10;
 // contact. Shallow overhangs glide off instead of becoming solid staircases.
 const PHY={gravity:8.2,planeDrag:.94,contact:.33,thickness:.078,escape:1.025,
  supportRadius:.185,stableRadius:.090,edgeSlide:.73,freezeAfter:.8,steadyFor:.34};
-// The landing target travels inside and OUTSIDE the bowl. Both safe windows
-// and risky arcs occur on every revolution, including during a long press.
-// Swiping can shift the whole path but cannot make it entirely safe.
-function orbitDistance(angle=orbitAngle){return orbitRadius+.34*Math.sin(angle*2+.4);}
-function aim(){const d=orbitDistance();return {x:Math.cos(orbitAngle)*d,z:Math.sin(orbitAngle)*d};}
+// Smooth fixed ellipse. Only the left and right tips go just beyond the rim.
+// This removes the alternating radial wave and keeps the speed predictable.
+const ORBIT={major:1.05,minor:.76};
+function aimAt(angle){return {x:Math.cos(angle)*ORBIT.major,z:Math.sin(angle)*ORBIT.minor};}
+function aim(){return aimAt(orbitAngle);}
 function projection(p){const g=geom();const perspective=1+clamp(p.z,-1.3,1.3)*.055;
-return{x:g.cx+p.x*g.rx*.86,y:g.rim+p.z*g.ry*.77-(p.h||0)*H*.18,r:g.r*perspective};}
+return{x:g.cx+p.x*g.rx,y:g.rim+p.z*g.ry-(p.h||0)*H*.18,r:g.r*perspective};}
 function bowlDist(p){return Math.hypot(p.x,p.z);}
 function resize(){const rect=canvas.getBoundingClientRect();const w=max(1,rect.width),h=max(1,rect.height);if(Math.abs(W-w)<.2&&Math.abs(H-h)<.2&&staticLayer)return;W=w;H=h;dpr=min(1.75,window.devicePixelRatio||1);
 canvas.width=Math.round(W*dpr);canvas.height=Math.round(H*dpr);ctx.setTransform(dpr,0,0,dpr,0,0);buildArt();}
@@ -42,8 +42,8 @@ function make(x,z,h=0,options={}){return{x,z,h,vx:options.vx||0,vz:options.vz||0
 function initial(){const a=[[-.49,-.36],[-.16,-.48],[.25,-.39],[.52,-.15],[-.32,.30],[.20,.27]];
 return a.map(([x,z],i)=>make(x,z,0,{seed:11+i*17,credited:true,fixed:true}));}
 function hud(){el.score.innerHTML=score+'<span class="unit">枚</span>';el.best.innerHTML=best+'<span class="unit">枚</span>';el.total.textContent=money(RAMEN+score*SLICE);}
-function stopHold(){holding=false;heldPointer=null;driftPointerY=null;}
-function start(){stopHold();stage='play';bodies=initial();score=BASE;orbitAngle=-PI*.55;orbitRadius=.99;shot=0;lastFire=-1e6;failPiece=null;settleTime=0;flash=null;shotPulse=null;landPulses=[];
+function stopHold(){holding=false;heldPointer=null;}
+function start(){stopHold();stage='play';bodies=initial();score=BASE;orbitAngle=-PI*.55;shot=0;lastFire=-1e6;failPiece=null;settleTime=0;flash=null;shotPulse=null;landPulses=[];
 el.label.textContent='特製チャーシューメン';el.title.classList.remove('result-title');el.overlay.classList.add('hidden');hud();}
 function factor(n){return (Math.round(n/BASE*100)/100).toString();}
 function payment(n){return Math.ceil(n/1000)*1000;}
@@ -62,12 +62,9 @@ const next=make(a.x,a.z,spawnH,{
  vx:-Math.sin(orbitAngle)*.042,vz:Math.cos(orbitAngle)*.042,vh:0,angle:rand(-.20,.20)});
 bodies.push(next);shot++;}
 function credit(p){if(p.credited||p.escaped)return;p.credited=true;landPulses.push({x:p.x,z:p.z,h:p.h,at:now});score++;if(score>best){best=score;try{localStorage.setItem('chashu-best-v3',String(best))}catch{}}hud();}
-function pointerDown(e){if(stage!=='play'||holding)return;e.preventDefault();holding=true;heldPointer=e.pointerId;holdStart=now;driftPointerY=e.clientY;fire();try{canvas.setPointerCapture(e.pointerId)}catch{}}
-function pointerMove(e){if(!holding||e.pointerId!==heldPointer)return;const dy=driftPointerY===null?0:e.clientY-driftPointerY;
-// Vertical drags adjust the orbit size; angular movement never stops while held.
-orbitRadius=clamp(orbitRadius-dy*.00115,.90,1.08);driftPointerY=e.clientY;}
+function pointerDown(e){if(stage!=='play'||holding)return;e.preventDefault();holding=true;heldPointer=e.pointerId;holdStart=now;fire();try{canvas.setPointerCapture(e.pointerId)}catch{}}
 function pointerUp(e){if(heldPointer===null||e.pointerId===heldPointer)stopHold();}
-canvas.addEventListener('pointerdown',pointerDown);canvas.addEventListener('pointermove',pointerMove);
+canvas.addEventListener('pointerdown',pointerDown);
 canvas.addEventListener('pointerup',pointerUp);canvas.addEventListener('pointercancel',pointerUp);
 canvas.addEventListener('lostpointercapture',pointerUp);window.addEventListener('pointerup',pointerUp);
 window.addEventListener('blur',stopHold);document.addEventListener('visibilitychange',()=>{if(document.hidden)stopHold()});
@@ -245,10 +242,9 @@ function drawAim(){const a=aim(),at=projection({...a,h:0});ctx.save();
  const segments=72;
  for(let i=0;i<segments;i++){
   const t=i*PI*2/segments,u=(i+1)*PI*2/segments;
-  const d=orbitDistance(t),e=orbitDistance(u);
-  const p=projection({x:Math.cos(t)*d,z:Math.sin(t)*d,h:0});
-  const q=projection({x:Math.cos(u)*e,z:Math.sin(u)*e,h:0});
-  ctx.strokeStyle=orbitDistance((t+u)*.5)>=PHY.escape?'#ff867265':'#fbe7ae4c';
+  const p=projection({...aimAt(t),h:0});
+  const q=projection({...aimAt(u),h:0});
+  ctx.strokeStyle=bowlDist(aimAt((t+u)*.5))>=PHY.escape?'#ff867265':'#fbe7ae4c';
   ctx.beginPath();ctx.moveTo(p.x,p.y);ctx.lineTo(q.x,q.y);ctx.stroke();
  }
  ctx.setLineDash([]);
