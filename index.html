@@ -83,7 +83,10 @@ try{best=max(BASE,Number(localStorage.getItem('chashu-best-v3'))||BASE)}catch{}
 function geom(){return{cx:W*.5,rim:H*.685,rx:W*.34,ry:H*.105,r:W*.054};}
 // World-space: x/depth z are elliptical-bowl radii; height h is above the soup.
 // Gravity and momentum operate on these positions; no scripted outward ejection.
-const PHY={gravity:6.8,planeDrag:.973,contact:.255,contactStiffness:.48,slip:.16,escape:1.02};
+// Each slice is a shallow 3D disc. Settled slices become kinematic supports.
+// World units: one soup radius ~1, vertical thickness ~0.075.
+const PHY={gravity:5.9,planeDrag:.94,contact:.33,thickness:.078,escape:1.025,
+ freezeAfter:1.60,steadyFor:.45,edgeSlide:.14};
 function aim(){return {x:Math.cos(orbitAngle)*orbitRadius,z:Math.sin(orbitAngle)*orbitRadius};}
 function projection(p){const g=geom();const perspective=1+clamp(p.z,-1.3,1.3)*.055;
 return{x:g.cx+p.x*g.rx*.86,y:g.rim+p.z*g.ry*.77-(p.h||0)*H*.18,r:g.r*perspective};}
@@ -93,9 +96,10 @@ canvas.width=Math.round(W*dpr);canvas.height=Math.round(H*dpr);ctx.setTransform(
 if(window.ResizeObserver)new ResizeObserver(resize).observe(canvas);else window.addEventListener('resize',resize);resize();
 function make(x,z,h=0,options={}){return{x,z,h,vx:options.vx||0,vz:options.vz||0,vh:options.vh||0,
  angle:options.angle??rand(-.2,.2),omega:options.omega??0,seed:options.seed??rand(0,100),
- resting:h<=0,escaped:false,fallingOut:false,credited:!!options.credited,age:0};}
+ resting:h<=0,escaped:false,fallingOut:false,credited:!!options.credited,age:0,
+ fixed:!!options.fixed,stableFor:0,supported:false,prevH:h};}
 function initial(){const a=[[-.49,-.36],[-.16,-.48],[.25,-.39],[.52,-.15],[-.32,.30],[.20,.27]];
-return a.map(([x,z],i)=>make(x,z,0,{seed:11+i*17,credited:true}));}
+return a.map(([x,z],i)=>make(x,z,0,{seed:11+i*17,credited:true,fixed:true}));}
 function hud(){el.score.innerHTML=score+'<span class="unit">枚</span>';el.best.innerHTML=best+'<span class="unit">枚</span>';el.total.textContent=money(RAMEN+score*SLICE);}
 function stopHold(){holding=false;heldPointer=null;driftPointerY=null;}
 function start(){stopHold();stage='play';bodies=initial();score=BASE;orbitAngle=-PI*.55;orbitRadius=.57;shot=0;lastFire=-1e6;failPiece=null;settleTime=0;flash=null;
@@ -107,7 +111,11 @@ el.label.textContent='ゲームオーバー';el.title.classList.add('result-titl
 el.info.textContent=`${score}枚`;el.details.hidden=false;
 el.details.innerHTML=`<div><span>チャーシュー重量</span><b>${score*GRAMS}g</b></div><div><span>チャーシューの厚み</span><b>${score*MM}mm</b></div><div><span>お会計</span><b>${money(cost)}</b></div><div><span>お預かり</span><b>${money(pay)}</b></div><div class="change"><span>お釣り</span><b>${money(pay-cost)}</b></div>`;
 el.start.textContent='もう一度';el.overlay.classList.remove('hidden');}
-function fire(){if(stage!=='play'||now-lastFire<140)return;lastFire=now;const a=aim(),next=make(a.x,a.z,1.00,{
+function fire(){if(stage!=='play'||now-lastFire<140)return;lastFire=now;const a=aim();
+// Start above the local pile, never materialize inside fixed upper layers.
+let spawnH=1.00;for(const p of bodies){if(p.escaped)continue;
+ if(Math.hypot(p.x-a.x,p.z-a.z)<PHY.contact*.95)spawnH=max(spawnH,p.h+.40);}
+const next=make(a.x,a.z,spawnH,{
  vx:-Math.sin(orbitAngle)*.042,vz:Math.cos(orbitAngle)*.042,vh:0,angle:rand(-.20,.20)});
 bodies.push(next);shot++;}
 function credit(p){if(p.credited||p.escaped)return;p.credited=true;score++;if(score>best){best=score;try{localStorage.setItem('chashu-best-v3',String(best))}catch{}}hud();}
@@ -123,47 +131,93 @@ window.addEventListener('blur',stopHold);document.addEventListener('visibilitych
 window.addEventListener('keydown',e=>{if((e.code==='Space'||e.code==='Enter')&&!['BUTTON','INPUT','TEXTAREA'].includes(document.activeElement?.tagName)){
 e.preventDefault();if(stage==='play'&&!e.repeat)fire();else if(stage!=='play')start();}});
 el.start.addEventListener('click',start);el.restart.addEventListener('click',start);
-// Semi-implicit Euler with spatial hash contact solver. All slices (except escaped
-// pieces) exchange impulses. The escaped pieces obey the same gravity step.
-function physics(dt){const step=dt/1000;
+// 2.5D disc physics: every body has horizontal position and height. A settled
+// body becomes a static collider, NOT a decorative image. Falling pieces must
+// physically land on soup or on discs underneath them. Unsupported overhangs
+// remain subject to gravity and can fall completely out of the bowl.
+function physics(dt){const step=dt/1000,th=PHY.thickness;
+ // Move the unstabilized discs only. Static slices never receive an impulse.
  for(const p of bodies){p.age+=step;
-  if(p.escaped){p.vh-=PHY.gravity*step;p.h+=p.vh*step;p.x+=p.vx*step;p.z+=p.vz*step;
-   p.angle+=p.omega*step;p.omega*=.995;continue;}
-  if(p.h>0||p.vh>0){p.vh-=PHY.gravity*step;p.h+=p.vh*step;}
-  else p.h=0;
+  if(p.fixed)continue;
+  if(p.escaped){p.vh-=PHY.gravity*step;p.h+=p.vh*step;
+   p.x+=p.vx*step;p.z+=p.vz*step;
+   p.angle+=p.omega*step;p.omega*=.996;continue;}
+  p.prevH=p.h;p.vh-=PHY.gravity*step;p.h+=p.vh*step;
   p.x+=p.vx*step;p.z+=p.vz*step;
-  p.vx*=Math.pow(PHY.planeDrag,dt/16.667);p.vz*=Math.pow(PHY.planeDrag,dt/16.667);
-  p.angle+=p.omega*step;p.omega*=.985;
-  // Soup is the support plane only *inside* the rim. Crossing the rim
-  // removes support and gravity takes the real body downwards.
-  if(bowlDist(p)<PHY.escape){if(p.h<0){p.h=0;p.vh=0;if(!p.resting){p.resting=true;credit(p)}}}
-  else if(p.h<=0){p.escaped=true;p.fallingOut=true;p.resting=false;p.vh=min(p.vh,-.08);p.omega+=clamp(p.vx+p.vz,-.4,.4);}
+  const drag=Math.pow(PHY.planeDrag,dt/16.667);
+  p.vx*=drag;p.vz*=drag;p.angle+=p.omega*step;p.omega*=.98;
  }
- // Spatial hashing avoids testing every pair every frame.
- const cell=.32,grid=new Map();for(let i=0;i<bodies.length;i++){
- const p=bodies[i];if(p.escaped)continue;const ix=Math.floor(p.x/cell),iz=Math.floor(p.z/cell),key=ix+','+iz;
- let a=grid.get(key);if(!a){a=[];grid.set(key,a)}a.push(i);}
+ // A spatial index avoids the full O(n²) contact scan for long games.
+ const cell=.42,grid=new Map();
+ for(let i=0;i<bodies.length;i++){const p=bodies[i];if(p.escaped)continue;
+  const key=Math.floor(p.x/cell)+','+Math.floor(p.z/cell);
+  let a=grid.get(key);if(!a){a=[];grid.set(key,a)}a.push(i);}
+ function neighbors(p){const xx=Math.floor(p.x/cell),zz=Math.floor(p.z/cell),out=[];
+  for(let x=xx-1;x<=xx+1;x++)for(let z=zz-1;z<=zz+1;z++){
+   const bucket=grid.get(x+','+z);if(bucket)for(const j of bucket)out.push(j);
+  }return out;}
+ // Integrate lowest to highest so a new meat slice can land on an already
+ // supported piece; the fixed colliders take no displacement themselves.
+ const indices=bodies.map((_,i)=>i).sort((a,b)=>bodies[a].h-bodies[b].h);
+ for(const i of indices){const p=bodies[i];if(p.fixed||p.escaped)continue;
+  const inside=bowlDist(p)<PHY.escape;
+  let floor=inside?0:-Infinity,support=null,supportQuality=0;
+  for(const j of neighbors(p)){if(j===i)continue;
+   const q=bodies[j];if(q.escaped)continue;
+   const dx=p.x-q.x,dz=p.z-q.z,d=Math.hypot(dx,dz);
+   if(d>=PHY.contact)continue;
+   // Consider a supporter only when it is geometrically below this slice.
+   // A higher slice never causes the falling slice to teleport upward.
+   // The supporter must be below the pre-step height. Otherwise
+   // neighboring slices could lift each other upward indefinitely.
+   if(!q.fixed&&!q.supported)continue;
+   if(q.h+th*.40>p.prevH)continue;
+   const quality=1-d/PHY.contact;
+   const top=q.h+th*(.86+.14*quality);
+   if(top>floor){floor=top;support=q;supportQuality=quality;}
+  }
+  p.supported=false;
+  if(floor!==-Infinity&&p.h<=floor&&p.vh<=0){
+   p.h=floor;p.vh=0;p.supported=true;p.resting=true;
+   // Weak outward slope on overhangs. Stable centered pieces do not slide.
+   if(support&&supportQuality<.64){
+    const dx=p.x-support.x,dz=p.z-support.z,d=Math.hypot(dx,dz)||1;
+    const excess=(.64-supportQuality)/.64;
+    const slope=PHY.edgeSlide*excess;
+    p.vx+=(dx/d)*slope*step;p.vz+=(dz/d)*slope*step;
+   }
+   credit(p);
+  }else{p.resting=false;}
+  if(!inside&&p.h<=-.025){p.escaped=true;p.fallingOut=true;
+   p.resting=false;p.fixed=false;p.vh=min(p.vh,-.08);
+   p.omega+=clamp(p.vx+p.vz,-.3,.3);continue;}
+  const motion=Math.hypot(p.vx,p.vz);
+  p.stableFor=(p.supported&&motion<.060&&Math.abs(p.vh)<.001)
+   ?p.stableFor+step:0;
+  if(p.supported&&p.age>=PHY.freezeAfter&&p.stableFor>=PHY.steadyFor){
+   p.fixed=true;p.vx=p.vz=p.vh=p.omega=0;p.stableFor=0;
+  }
+ }
+ // Same-level contacts (within a slice's thickness) resolve side collisions.
+ // Anchored meat does NOT budge; new meat has to find free space or fall.
  for(let i=0;i<bodies.length;i++){
- const a=bodies[i];if(a.escaped||a.h>.25)continue;
- const ix=Math.floor(a.x/cell),iz=Math.floor(a.z/cell);
- for(let xx=ix-1;xx<=ix+1;xx++)for(let zz=iz-1;zz<=iz+1;zz++){
- const group=grid.get(xx+','+zz);if(!group)continue;
- for(const j of group){if(j<=i)continue;const b=bodies[j];if(b.escaped||b.h>.25)continue;
- const dx=b.x-a.x,dz=b.z-a.z,d2=dx*dx+dz*dz;
- const contact=PHY.contact;if(d2>=contact*contact)continue;
- const d=Math.sqrt(max(d2,.000001)),nx=d>.001?dx/d:Math.cos(i*2.4),nz=d>.001?dz/d:Math.sin(i*2.4);
- const overlap=contact-d;
- // Normal impulses spread stacked slices, but permit soft overlap like sliced meat.
- const correction=overlap*PHY.contactStiffness;
- a.x-=nx*correction*.5;a.z-=nz*correction*.5;
- b.x+=nx*correction*.5;b.z+=nz*correction*.5;
- const rel=(b.vx-a.vx)*nx+(b.vz-a.vz)*nz;
- if(rel<0){const impulse=-rel*.16;a.vx-=nx*impulse;b.vx+=nx*impulse;a.vz-=nz*impulse;b.vz+=nz*impulse;}
- // resting pork gets a small lateral shove; not a scripted spill.
- const friction=overlap*PHY.slip;
- a.vx-=nx*friction;b.vx+=nx*friction;a.vz-=nz*friction;b.vz+=nz*friction;
- }} }
- // Leaving the actual support plane is the ONLY failure source.
+  const a=bodies[i];if(a.escaped)continue;
+  for(const j of neighbors(a)){
+   if(j<=i)continue;const b=bodies[j];if(b.escaped||a.fixed&&b.fixed)continue;
+   if(Math.abs(a.h-b.h)>th*.56)continue;
+   const dx=b.x-a.x,dz=b.z-a.z,d2=dx*dx+dz*dz;
+   const minD=PHY.contact*.64;if(d2>=minD*minD)continue;
+   const d=Math.sqrt(max(d2,.000001)),nx=d>.001?dx/d:Math.cos(i*2.4),nz=d>.001?dz/d:Math.sin(i*2.4);
+   const push=(minD-d)*.32;
+   const wa=a.fixed?0:b.fixed?1:.5,wb=b.fixed?0:a.fixed?1:.5;
+   a.x-=nx*push*wa;a.z-=nz*push*wa;
+   b.x+=nx*push*wb;b.z+=nz*push*wb;
+   if(!a.fixed){a.vx-=nx*push*step*12;a.vz-=nz*push*step*12;a.stableFor=0;}
+   if(!b.fixed){b.vx+=nx*push*step*12;b.vz+=nz*push*step*12;b.stableFor=0;}
+  }
+ }
+ // There is no scripted eject animation. A real escaped body stays active,
+ // falls with the same gravity, and is drawn in front of the bowl.
  if(stage==='play')for(const p of bodies){if(p.escaped){failPiece=p;stage='spill';stopHold();break;}}
  if(stage==='spill'&&failPiece&&failPiece.h<-1.25)finish();
 }
