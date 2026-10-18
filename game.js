@@ -10,6 +10,9 @@ const rand=(a,b)=>a+Math.random()*(b-a);
 let W=360,H=510,dpr=1,stage='menu',bodies=[],score=BASE,best=BASE;
 let now=0,prev=0,orbitAngle=-PI*.55,orbitRadius=.99,holding=false,heldPointer=null,holdStart=0,lastFire=-1e6,shot=0;
 let staticLayer=null,sprites=[],driftPointerY=null,failPiece=null,frameCount=0,settleTime=0,flash=null,slowFrame=0;
+let shotPulse=null,landPulses=[];
+const TEMPO={startSpeed:1.90,speedPerSlice:.012,maxBonus:.67,shotDelay:235,holdDelay:175,tapDelay:95};
+function orbitSpeed(){return TEMPO.startSpeed+min(TEMPO.maxBonus,max(0,score-BASE)*TEMPO.speedPerSlice);}
 try{best=max(BASE,Number(localStorage.getItem('chashu-best-v3'))||BASE)}catch{}
 function geom(){return{cx:W*.5,rim:H*.685,rx:W*.34,ry:H*.105,r:W*.054};}
 // World-space: x/depth z are elliptical-bowl radii; height h is above the soup.
@@ -19,7 +22,7 @@ function geom(){return{cx:W*.5,rim:H*.685,rx:W*.34,ry:H*.105,r:W*.054};}
 const RECENT_MOVABLE=10;
 // A disc needs substantial overlap to be supported, not just edge-to-edge
 // contact. Shallow overhangs glide off instead of becoming solid staircases.
-const PHY={gravity:5.9,planeDrag:.94,contact:.33,thickness:.078,escape:1.025,
+const PHY={gravity:8.2,planeDrag:.94,contact:.33,thickness:.078,escape:1.025,
  supportRadius:.185,stableRadius:.090,edgeSlide:.73,freezeAfter:.8,steadyFor:.34};
 // The landing target travels inside and OUTSIDE the bowl. Both safe windows
 // and risky arcs occur on every revolution, including during a long press.
@@ -40,7 +43,7 @@ function initial(){const a=[[-.49,-.36],[-.16,-.48],[.25,-.39],[.52,-.15],[-.32,
 return a.map(([x,z],i)=>make(x,z,0,{seed:11+i*17,credited:true,fixed:true}));}
 function hud(){el.score.innerHTML=score+'<span class="unit">枚</span>';el.best.innerHTML=best+'<span class="unit">枚</span>';el.total.textContent=money(RAMEN+score*SLICE);}
 function stopHold(){holding=false;heldPointer=null;driftPointerY=null;}
-function start(){stopHold();stage='play';bodies=initial();score=BASE;orbitAngle=-PI*.55;orbitRadius=.99;shot=0;lastFire=-1e6;failPiece=null;settleTime=0;flash=null;
+function start(){stopHold();stage='play';bodies=initial();score=BASE;orbitAngle=-PI*.55;orbitRadius=.99;shot=0;lastFire=-1e6;failPiece=null;settleTime=0;flash=null;shotPulse=null;landPulses=[];
 el.label.textContent='特製チャーシューメン';el.title.classList.remove('result-title');el.overlay.classList.add('hidden');hud();}
 function factor(n){return (Math.round(n/BASE*100)/100).toString();}
 function payment(n){return Math.ceil(n/1000)*1000;}
@@ -49,15 +52,16 @@ el.label.textContent='ゲームオーバー';el.title.classList.add('result-titl
 el.info.textContent=`${score}枚`;el.details.hidden=false;
 el.details.innerHTML=`<div><span>チャーシュー重量</span><b>${score*GRAMS}g</b></div><div><span>チャーシューの厚み</span><b>${score*MM}mm</b></div><div><span>お会計</span><b>${money(cost)}</b></div><div><span>お預かり</span><b>${money(pay)}</b></div><div class="change"><span>お釣り</span><b>${money(pay-cost)}</b></div>`;
 el.start.textContent='もう一度';el.overlay.classList.remove('hidden');}
-function fire(){if(stage!=='play'||now-lastFire<140)return;lastFire=now;const a=aim();
+function fire(){if(stage!=='play'||now-lastFire<TEMPO.tapDelay)return;
+lastFire=now;const a=aim();shotPulse={x:a.x,z:a.z,at:now,danger:bowlDist(a)>=PHY.escape};
 // Use only genuinely supported, landed pork as the launching clearance.
 // Including still-falling slices produced an endless vertical chain in the sky.
-let spawnH=1.00;for(const p of bodies){if(p.escaped||!(p.fixed||p.supported)||p.age<.20)continue;
- if(Math.hypot(p.x-a.x,p.z-a.z)<PHY.supportRadius)spawnH=max(spawnH,p.h+.32);}
+let spawnH=.78;for(const p of bodies){if(p.escaped||!(p.fixed||p.supported)||p.age<.20)continue;
+ if(Math.hypot(p.x-a.x,p.z-a.z)<PHY.supportRadius)spawnH=max(spawnH,p.h+.27);}
 const next=make(a.x,a.z,spawnH,{
  vx:-Math.sin(orbitAngle)*.042,vz:Math.cos(orbitAngle)*.042,vh:0,angle:rand(-.20,.20)});
 bodies.push(next);shot++;}
-function credit(p){if(p.credited||p.escaped)return;p.credited=true;score++;if(score>best){best=score;try{localStorage.setItem('chashu-best-v3',String(best))}catch{}}hud();}
+function credit(p){if(p.credited||p.escaped)return;p.credited=true;landPulses.push({x:p.x,z:p.z,h:p.h,at:now});score++;if(score>best){best=score;try{localStorage.setItem('chashu-best-v3',String(best))}catch{}}hud();}
 function pointerDown(e){if(stage!=='play'||holding)return;e.preventDefault();holding=true;heldPointer=e.pointerId;holdStart=now;driftPointerY=e.clientY;fire();try{canvas.setPointerCapture(e.pointerId)}catch{}}
 function pointerMove(e){if(!holding||e.pointerId!==heldPointer)return;const dy=driftPointerY===null?0:e.clientY-driftPointerY;
 // Vertical drags adjust the orbit size; angular movement never stops while held.
@@ -163,7 +167,7 @@ function physics(dt){const step=dt/1000,th=PHY.thickness;
  // There is no scripted eject animation. A real escaped body stays active,
  // falls with the same gravity, and is drawn in front of the bowl.
  if(stage==='play')for(const p of bodies){if(p.escaped){failPiece=p;stage='spill';stopHold();break;}}
- if(stage==='spill'&&failPiece&&failPiece.h<-1.25)finish();
+ if(stage==='spill'&&failPiece&&failPiece.h<-1.05)finish();
 }
 // Only visual state (no invented forces or timed game-over transitions).
 function buildArt(){const old=ctx;
@@ -252,12 +256,24 @@ function drawAim(){const a=aim(),at=projection({...a,h:0});ctx.save();
  ctx.lineWidth=3;ctx.strokeStyle=danger?'#ff7c68':'#fff2b9';
  ctx.beginPath();ctx.ellipse(at.x,at.y,geom().r*1.0,geom().r*.59,0,0,PI*2);ctx.stroke();
  ctx.fillStyle=danger?'#ff7c68':'#fff2b9';ctx.beginPath();ctx.arc(at.x,at.y,3,0,PI*2);ctx.fill();ctx.restore();}
+function drawFeedback(){
+ // Brief impact rings communicate the exact drop and landing without extra text.
+ if(shotPulse){const life=(now-shotPulse.at)/190;
+  if(life>=1)shotPulse=null;
+  else if(life>=0){const q=projection({...shotPulse,h:0});ctx.save();ctx.globalAlpha=.8*(1-life);
+   ctx.lineWidth=2.5;ctx.strokeStyle=shotPulse.danger?'#ff917d':'#ffe7a8';ctx.beginPath();
+   ctx.ellipse(q.x,q.y,geom().r*(.6+life*.7),geom().r*(.35+life*.38),0,0,PI*2);ctx.stroke();ctx.restore();}}
+ for(let i=landPulses.length-1;i>=0;i--){const p=landPulses[i],life=(now-p.at)/270;
+  if(life>=1){landPulses.splice(i,1);continue;}
+  const q=projection(p);ctx.save();ctx.globalAlpha=.54*(1-life);ctx.strokeStyle='#ffe69a';ctx.lineWidth=2;
+  ctx.beginPath();ctx.ellipse(q.x,q.y,geom().r*(.55+life*.8),geom().r*(.28+life*.42),0,0,PI*2);ctx.stroke();ctx.restore();}
+}
 function draw(){ctx.clearRect(0,0,W,H);if(staticLayer)ctx.drawImage(staticLayer,0,0,W,H);else{woodWall();counter();bowlDrawing();}
  if(stage==='play')drawAim();
  // Draw farther pieces first; projected height places airborne meat above the soup.
  const ordered=[...bodies].sort((a,b)=>(a.z-a.h*.2)-(b.z-b.h*.2));
  for(const p of ordered){if(p.fallingOut)continue;const q=projection(p);paintMeat({x:q.x,y:q.y,r:q.r,angle:p.angle,seed:p.seed});}
- rimFront();
+ rimFront();drawFeedback();
  // Falling-out meat goes in front of the bowl, physically below the rim.
  for(const p of bodies){if(!p.fallingOut)continue;const q=projection(p);paintMeat({x:q.x,y:q.y,r:q.r,angle:p.angle,seed:p.seed});}
  if(stage==='play'){const a=aim(),p=projection({...a,h:1.00});paintMeat({x:p.x,y:p.y,r:p.r,angle:now*.00019,seed:17});}
@@ -268,8 +284,8 @@ function draw(){ctx.clearRect(0,0,W,H);if(staticLayer)ctx.drawImage(staticLayer,
 function frame(ts){const dt=clamp(ts-prev||16,0,34);prev=ts;now=ts;
  if(stage==='play'){
  // Rotate automatically regardless of whether the pointer moves.
- orbitAngle+=(dt/1000)*(1.12+min(.42,max(0,score-BASE)*.004));
- if(holding&&now-holdStart>=220&&now-lastFire>=290)fire();
+ orbitAngle+=(dt/1000)*orbitSpeed();
+ if(holding&&now-holdStart>=TEMPO.holdDelay&&now-lastFire>=TEMPO.shotDelay)fire();
  }
  if(stage==='play'||stage==='spill'){
  // Physics integration at bounded substeps to prevent jumps on slow devices.
