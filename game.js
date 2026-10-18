@@ -8,7 +8,7 @@ const clamp=(v,a,b)=>max(a,min(b,v));
 const money=n=>Math.round(n).toLocaleString('ja-JP')+'円';
 const rand=(a,b)=>a+Math.random()*(b-a);
 let W=360,H=510,dpr=1,stage='menu',bodies=[],score=BASE,best=BASE;
-let now=0,prev=0,orbitAngle=-PI*.55,orbitRadius=.57,holding=false,heldPointer=null,holdStart=0,lastFire=-1e6,shot=0;
+let now=0,prev=0,orbitAngle=-PI*.55,orbitRadius=.99,holding=false,heldPointer=null,holdStart=0,lastFire=-1e6,shot=0;
 let staticLayer=null,sprites=[],driftPointerY=null,failPiece=null,frameCount=0,settleTime=0,flash=null,slowFrame=0;
 try{best=max(BASE,Number(localStorage.getItem('chashu-best-v3'))||BASE)}catch{}
 function geom(){return{cx:W*.5,rim:H*.685,rx:W*.34,ry:H*.105,r:W*.054};}
@@ -21,7 +21,11 @@ const RECENT_MOVABLE=10;
 // contact. Shallow overhangs glide off instead of becoming solid staircases.
 const PHY={gravity:5.9,planeDrag:.94,contact:.33,thickness:.078,escape:1.025,
  supportRadius:.185,stableRadius:.090,edgeSlide:.73,freezeAfter:.8,steadyFor:.34};
-function aim(){return {x:Math.cos(orbitAngle)*orbitRadius,z:Math.sin(orbitAngle)*orbitRadius};}
+// The landing target travels inside and OUTSIDE the bowl. Both safe windows
+// and risky arcs occur on every revolution, including during a long press.
+// Swiping can shift the whole path but cannot make it entirely safe.
+function orbitDistance(angle=orbitAngle){return orbitRadius+.34*Math.sin(angle*2+.4);}
+function aim(){const d=orbitDistance();return {x:Math.cos(orbitAngle)*d,z:Math.sin(orbitAngle)*d};}
 function projection(p){const g=geom();const perspective=1+clamp(p.z,-1.3,1.3)*.055;
 return{x:g.cx+p.x*g.rx*.86,y:g.rim+p.z*g.ry*.77-(p.h||0)*H*.18,r:g.r*perspective};}
 function bowlDist(p){return Math.hypot(p.x,p.z);}
@@ -36,7 +40,7 @@ function initial(){const a=[[-.49,-.36],[-.16,-.48],[.25,-.39],[.52,-.15],[-.32,
 return a.map(([x,z],i)=>make(x,z,0,{seed:11+i*17,credited:true,fixed:true}));}
 function hud(){el.score.innerHTML=score+'<span class="unit">枚</span>';el.best.innerHTML=best+'<span class="unit">枚</span>';el.total.textContent=money(RAMEN+score*SLICE);}
 function stopHold(){holding=false;heldPointer=null;driftPointerY=null;}
-function start(){stopHold();stage='play';bodies=initial();score=BASE;orbitAngle=-PI*.55;orbitRadius=.57;shot=0;lastFire=-1e6;failPiece=null;settleTime=0;flash=null;
+function start(){stopHold();stage='play';bodies=initial();score=BASE;orbitAngle=-PI*.55;orbitRadius=.99;shot=0;lastFire=-1e6;failPiece=null;settleTime=0;flash=null;
 el.label.textContent='特製チャーシューメン';el.title.classList.remove('result-title');el.overlay.classList.add('hidden');hud();}
 function factor(n){return (Math.round(n/BASE*100)/100).toString();}
 function payment(n){return Math.ceil(n/1000)*1000;}
@@ -57,7 +61,7 @@ function credit(p){if(p.credited||p.escaped)return;p.credited=true;score++;if(sc
 function pointerDown(e){if(stage!=='play'||holding)return;e.preventDefault();holding=true;heldPointer=e.pointerId;holdStart=now;driftPointerY=e.clientY;fire();try{canvas.setPointerCapture(e.pointerId)}catch{}}
 function pointerMove(e){if(!holding||e.pointerId!==heldPointer)return;const dy=driftPointerY===null?0:e.clientY-driftPointerY;
 // Vertical drags adjust the orbit size; angular movement never stops while held.
-orbitRadius=clamp(orbitRadius-dy*.0018,.26,.77);driftPointerY=e.clientY;}
+orbitRadius=clamp(orbitRadius-dy*.00115,.90,1.08);driftPointerY=e.clientY;}
 function pointerUp(e){if(heldPointer===null||e.pointerId===heldPointer)stopHold();}
 canvas.addEventListener('pointerdown',pointerDown);canvas.addEventListener('pointermove',pointerMove);
 canvas.addEventListener('pointerup',pointerUp);canvas.addEventListener('pointercancel',pointerUp);
@@ -230,11 +234,24 @@ ctx.restore();}
 function rimFront(){const g=geom(),c=g.cx,y=g.rim,rx=g.rx,ry=g.ry;
 ctx.beginPath();ctx.ellipse(c,y,rx,ry,0,.015,Math.PI-.015);ctx.strokeStyle='#fff7e4';ctx.lineWidth=8;ctx.stroke();ctx.beginPath();ctx.ellipse(c,y+2,rx*.979,ry*.95,0,.018,Math.PI-.018);ctx.strokeStyle='#ac4636';ctx.lineWidth=2.1;ctx.stroke();}
 
-function drawAim(){const g=geom();const a=aim(),at=projection({...a,h:0});ctx.save();
- ctx.strokeStyle='#fbe7ae5e';ctx.lineWidth=1.6;ctx.setLineDash([4,7]);ctx.beginPath();
- ctx.ellipse(g.cx,g.rim,g.rx*.86*orbitRadius,g.ry*.77*orbitRadius,0,0,PI*2);ctx.stroke();ctx.setLineDash([]);
- ctx.lineWidth=2.4;ctx.strokeStyle='#fff1bf';ctx.beginPath();ctx.ellipse(at.x,at.y,g.r*.9,g.r*.52,0,0,PI*2);ctx.stroke();
- ctx.fillStyle='#fff2be';ctx.beginPath();ctx.arc(at.x,at.y,2.7,0,PI*2);ctx.fill();ctx.restore();}
+function drawAim(){const a=aim(),at=projection({...a,h:0});ctx.save();
+ // Guide: golden arcs are over the bowl; red arcs are beyond the rim.
+ // Keep the guide subtle and cheap to draw at mobile resolutions.
+ ctx.lineWidth=1.35;ctx.setLineDash([4,6]);
+ const segments=72;
+ for(let i=0;i<segments;i++){
+  const t=i*PI*2/segments,u=(i+1)*PI*2/segments;
+  const d=orbitDistance(t),e=orbitDistance(u);
+  const p=projection({x:Math.cos(t)*d,z:Math.sin(t)*d,h:0});
+  const q=projection({x:Math.cos(u)*e,z:Math.sin(u)*e,h:0});
+  ctx.strokeStyle=orbitDistance((t+u)*.5)>=PHY.escape?'#ff867265':'#fbe7ae4c';
+  ctx.beginPath();ctx.moveTo(p.x,p.y);ctx.lineTo(q.x,q.y);ctx.stroke();
+ }
+ ctx.setLineDash([]);
+ const danger=bowlDist(a)>=PHY.escape;
+ ctx.lineWidth=3;ctx.strokeStyle=danger?'#ff7c68':'#fff2b9';
+ ctx.beginPath();ctx.ellipse(at.x,at.y,geom().r*1.0,geom().r*.59,0,0,PI*2);ctx.stroke();
+ ctx.fillStyle=danger?'#ff7c68':'#fff2b9';ctx.beginPath();ctx.arc(at.x,at.y,3,0,PI*2);ctx.fill();ctx.restore();}
 function draw(){ctx.clearRect(0,0,W,H);if(staticLayer)ctx.drawImage(staticLayer,0,0,W,H);else{woodWall();counter();bowlDrawing();}
  if(stage==='play')drawAim();
  // Draw farther pieces first; projected height places airborne meat above the soup.
@@ -251,7 +268,7 @@ function draw(){ctx.clearRect(0,0,W,H);if(staticLayer)ctx.drawImage(staticLayer,
 function frame(ts){const dt=clamp(ts-prev||16,0,34);prev=ts;now=ts;
  if(stage==='play'){
  // Rotate automatically regardless of whether the pointer moves.
- orbitAngle+=(dt/1000)*(.96+min(.40,max(0,score-BASE)*.004));
+ orbitAngle+=(dt/1000)*(1.12+min(.42,max(0,score-BASE)*.004));
  if(holding&&now-holdStart>=220&&now-lastFire>=290)fire();
  }
  if(stage==='play'||stage==='spill'){
