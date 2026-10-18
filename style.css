@@ -35,3 +35,7 @@ button{font-family:inherit;cursor:pointer;touch-action:manipulation}
 .reset{background:#3d2519;border:1px solid #9f754f;color:#ffdfb1;padding:9px 14px;border-radius:99px;font-size:12px;font-weight:800;white-space:nowrap;flex-shrink:0}
 @media(max-width:380px){#app{padding:10px 8px}.stage{max-height:none}.stat{padding:6px 6px}.stat small{font-size:9px}.controls{font-size:11px}.panel{padding:19px 12px}}
 @media(max-height:700px){#app{gap:6px}.stage{max-height:74dvh}.header{padding:0}.bottom{padding-top:0}}
+
+.record-settings{display:flex;justify-content:flex-end;margin-top:-7px;padding:0 5px}
+.clear-record{border:0;background:transparent;color:#d7b393;padding:6px 8px;font-size:11px;text-decoration:underline;text-underline-offset:3px}
+.clear-record:focus-visible{outline:2px solid #ffe6ac;outline-offset:2px;border-radius:6px}
