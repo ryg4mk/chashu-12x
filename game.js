@@ -1,104 +1,111 @@
 (()=>{'use strict';
+// Chashu 12x — orbit-aimed, continuous 2.5D pork-slice physics.
 const BASE=6, RAMEN=950, SLICE=70, GRAMS=12, MM=7;
 const canvas=document.getElementById('game');let ctx=canvas.getContext('2d');const $=id=>document.getElementById(id);
 const el={score:$('score'),best:$('best'),total:$('total'),overlay:$('overlay'),label:$('panel-label'),title:$('panel-title'),info:$('panel-info'),details:$('result-detail'),start:$('start'),restart:$('restart')};
-let W=360,H=510,dpr=1,stage='menu',bodies=[],score=BASE,best=BASE;
-let now=0,prev=0,aim=0,dir=1,holding=false,holdStart=0,lastFire=-Infinity,heldPointer=null,ended=false,shots=0;
-let lastFrameError=false,staticLayer=null,sprites=[],spillPiece=null,spillStarted=0,aimTouch=false,flash=null;
-const lanes=[-.34,.35,-.03,-.48,.25,.06,.48,-.21];
-try{best=Math.max(BASE,Number(localStorage.getItem('chashu-best-v3'))||BASE)}catch{}
-const min=(a,b)=>Math.min(a,b),max=(a,b)=>Math.max(a,b),clamp=(n,a,b)=>max(a,min(b,n));
+const min=Math.min,max=Math.max,PI=Math.PI;
+const clamp=(v,a,b)=>max(a,min(b,v));
 const money=n=>Math.round(n).toLocaleString('ja-JP')+'円';
 const rand=(a,b)=>a+Math.random()*(b-a);
-const geom=()=>({cx:W*.5,rim:H*.685,rx:W*.34,ry:H*.105,floor:H*.672,r:W*.054});
-function resize(){const oldW=W,oldH=H,r=canvas.getBoundingClientRect();W=max(1,r.width);H=max(1,r.height);dpr=min(2,window.devicePixelRatio||1);canvas.width=Math.round(W*dpr);canvas.height=Math.round(H*dpr);ctx.setTransform(dpr,0,0,dpr,0,0);
-if(bodies.length&&oldW&&oldH){for(const p of bodies){p.x*=W/oldW;p.y*=H/oldH;p.r*=W/oldW;p.vx*=W/oldW;p.vy*=H/oldH;p.z*=H/oldH;if(p.settled)p.y=geom().rim+p.z;}}buildArt();}
+let W=360,H=510,dpr=1,stage='menu',bodies=[],score=BASE,best=BASE;
+let now=0,prev=0,orbitAngle=-PI*.55,orbitRadius=.57,holding=false,heldPointer=null,holdStart=0,lastFire=-1e6,shot=0;
+let staticLayer=null,sprites=[],driftPointerY=null,failPiece=null,frameCount=0,settleTime=0,flash=null,slowFrame=0;
+try{best=max(BASE,Number(localStorage.getItem('chashu-best-v3'))||BASE)}catch{}
+function geom(){return{cx:W*.5,rim:H*.685,rx:W*.34,ry:H*.105,r:W*.054};}
+// World-space: x/depth z are elliptical-bowl radii; height h is above the soup.
+// Gravity and momentum operate on these positions; no scripted outward ejection.
+const PHY={gravity:6.8,planeDrag:.973,contact:.255,contactStiffness:.48,slip:.16,escape:1.02};
+function aim(){return {x:Math.cos(orbitAngle)*orbitRadius,z:Math.sin(orbitAngle)*orbitRadius};}
+function projection(p){const g=geom();const perspective=1+clamp(p.z,-1.3,1.3)*.055;
+return{x:g.cx+p.x*g.rx*.86,y:g.rim+p.z*g.ry*.77-(p.h||0)*H*.18,r:g.r*perspective};}
+function bowlDist(p){return Math.hypot(p.x,p.z);}
+function resize(){const rect=canvas.getBoundingClientRect();const w=max(1,rect.width),h=max(1,rect.height);if(Math.abs(W-w)<.2&&Math.abs(H-h)<.2&&staticLayer)return;W=w;H=h;dpr=min(1.75,window.devicePixelRatio||1);
+canvas.width=Math.round(W*dpr);canvas.height=Math.round(H*dpr);ctx.setTransform(dpr,0,0,dpr,0,0);buildArt();}
 if(window.ResizeObserver)new ResizeObserver(resize).observe(canvas);else window.addEventListener('resize',resize);resize();
-// A horizontal, lightly overlapping arrangement on the soup surface.
-// Each pork slice stays in the bowl's 2D surface plane; no vertical towers.
-function initial(){const g=geom();
-const positions=[[-.60,-.39],[-.20,-.50],[.21,-.48],[.60,-.34],[-.34,.36],[.34,.34]];
-return positions.map(([x,z],i)=>newBody(g.cx+x*g.rx*.82,g.rim+z*g.ry*.76,{fixed:true,settled:true,z:z*g.ry*.76,seed:31+i*12}));}
-function newBody(x,y,opt={}){return{x,y,vx:opt.vx||0,vy:opt.vy||0,vz:0,z:opt.z||0,r:geom().r,angle:rand(-.25,.25),omega:rand(-.35,.35),seed:opt.seed??rand(0,100),fixed:!!opt.fixed,settled:!!opt.settled,age:0,spilled:false};}
-function bowlDistance(p){const g=geom();const dx=(p.x-g.cx)/(g.rx*.82),dz=p.z/(g.ry*.75);return Math.hypot(dx,dz);}
-function inBowl(p,margin=1){return bowlDistance(p)<=margin;}
-// Cache the painted shop and bowl, plus eight pork variations. Dynamic frames only draw sprites.
-function buildArt(){const prevCtx=ctx;
- const art=document.createElement('canvas');art.width=Math.round(W*dpr);art.height=Math.round(H*dpr);ctx=art.getContext('2d');ctx.setTransform(dpr,0,0,dpr,0,0);woodWall();counter();bowlDrawing();staticLayer=art;
- sprites=[];const radius=geom().r,sz=Math.ceil(radius*3.1);
- for(let i=0;i<8;i++){const c=document.createElement('canvas');c.width=Math.round(sz*dpr);c.height=Math.round(sz*dpr);ctx=c.getContext('2d');ctx.setTransform(dpr,0,0,dpr,0,0);meat({x:sz*.5,y:sz*.5,r:radius,angle:0,seed:i*20+17});sprites.push(c)}ctx=prevCtx;
-}
-function paintMeat(p){if(!sprites.length){meat(p);return;}const sz=p.r*3.1,variant=(Math.floor(p.seed*7)%sprites.length+sprites.length)%sprites.length;
- ctx.save();ctx.translate(p.x,p.y);ctx.rotate(p.angle);ctx.drawImage(sprites[variant],-sz/2,-sz/2,sz,sz);ctx.restore();}
-
-
+function make(x,z,h=0,options={}){return{x,z,h,vx:options.vx||0,vz:options.vz||0,vh:options.vh||0,
+ angle:options.angle??rand(-.2,.2),omega:options.omega??0,seed:options.seed??rand(0,100),
+ resting:h<=0,escaped:false,fallingOut:false,credited:!!options.credited,age:0};}
+function initial(){const a=[[-.49,-.36],[-.16,-.48],[.25,-.39],[.52,-.15],[-.32,.30],[.20,.27]];
+return a.map(([x,z],i)=>make(x,z,0,{seed:11+i*17,credited:true}));}
 function hud(){el.score.innerHTML=score+'<span class="unit">枚</span>';el.best.innerHTML=best+'<span class="unit">枚</span>';el.total.textContent=money(RAMEN+score*SLICE);}
-function cleanHold(){holding=false;heldPointer=null;aimTouch=false;}
-function start(){cleanHold();stage='play';ended=false;bodies=initial();score=BASE;aim=0;dir=1;shots=0;spillPiece=null;flash=null;lastFire=-Infinity;el.overlay.classList.add('hidden');hud();}
+function stopHold(){holding=false;heldPointer=null;driftPointerY=null;}
+function start(){stopHold();stage='play';bodies=initial();score=BASE;orbitAngle=-PI*.55;orbitRadius=.57;shot=0;lastFire=-1e6;failPiece=null;settleTime=0;flash=null;
+el.label.textContent='特製チャーシューメン';el.title.classList.remove('result-title');el.overlay.classList.add('hidden');hud();}
 function factor(n){return (Math.round(n/BASE*100)/100).toString();}
-function payment(total){return Math.ceil(total/1000)*1000;}
-function end(){if(ended||(stage!=='play'&&stage!=='spill'))return;ended=true;stage='over';cleanHold();const total=RAMEN+score*SLICE,pay=payment(total);
+function payment(n){return Math.ceil(n/1000)*1000;}
+function finish(){if(stage==='over')return;stage='over';stopHold();const cost=RAMEN+score*SLICE,pay=payment(cost);
 el.label.textContent='ゲームオーバー';el.title.classList.add('result-title');el.title.innerHTML=`チャーシューメン、<br>チャーシュー${factor(score)}倍`;
-el.info.textContent=`${score}枚`;el.details.hidden=false;el.details.innerHTML=`<div><span>チャーシュー重量</span><b>${score*GRAMS}g</b></div><div><span>チャーシューの厚み</span><b>${score*MM}mm</b></div><div><span>お会計</span><b>${money(total)}</b></div><div><span>お預かり</span><b>${money(pay)}</b></div><div class="change"><span>お釣り</span><b>${money(pay-total)}</b></div>`;
+el.info.textContent=`${score}枚`;el.details.hidden=false;
+el.details.innerHTML=`<div><span>チャーシュー重量</span><b>${score*GRAMS}g</b></div><div><span>チャーシューの厚み</span><b>${score*MM}mm</b></div><div><span>お会計</span><b>${money(cost)}</b></div><div><span>お預かり</span><b>${money(pay)}</b></div><div class="change"><span>お釣り</span><b>${money(pay-cost)}</b></div>`;
 el.start.textContent='もう一度';el.overlay.classList.remove('hidden');}
-function nextDepth(){return (lanes[shots%lanes.length]+Math.sin(shots*3.7)*.035)*geom().ry*.65;}
-function fire(){if(stage!=='play'||now-lastFire<138)return;
- lastFire=now;const g=geom(),z=nextDepth(),x=g.cx+aim*g.rx*.90;
- shots++;const p=newBody(x,H*.455,{vx:dir*rand(-3,5),vy:0,z});bodies.push(p);
-}
-function makeSpill(p){if(stage!=='play')return;
- stage='spill';spillStarted=now;spillPiece=p;cleanHold();p.spilled=true;p.settled=false;
- // Visible ejection: pop over the lip, then fall onto the counter.
- const g=geom();const side=(p.x>=g.cx?1:-1);
- p.vx=side*max(115,Math.abs(p.vx)*1.25);p.vy=-95;p.omega=side*2;
- flash={text:'こぼれた！',x:g.cx,y:g.rim-g.ry*.9,until:now+1010};
-}
-function pushCrowd(fresh){const r=fresh.r,g=geom();let crowd=0;
- for(const other of bodies){if(other===fresh||!other.settled||other.spilled)continue;
- const dx=other.x-fresh.x,dz=other.z-fresh.z;
- const dist=Math.hypot(dx,dz);if(dist>r*2.3)continue;
- const overlap=1-clamp(dist/(r*2.3),0,1);crowd+=overlap;
- if(other.fixed)continue;
- const nx=dx/(dist||1),nz=dz/(dist||1);
- // Every newly placed slice gives crowded neighbors an outward nudge.
- const pressure=(30+min(65,max(0,score-BASE)*.85))*overlap;
- other.vx+=nx*pressure;other.vz+=nz*pressure*.34;
- }
- // A stationary long press creates increasing pressure; spreading the aim helps.
- if(crowd>1.8){const side=Math.sign(fresh.x-g.cx)||dir;
- fresh.vx+=side*min(55,(crowd-1.8)*12);}
- if(crowd<1.15&&score%4===0)flash={text:'GOOD!',x:fresh.x,y:fresh.y-r*1.9,until:now+420};
-}
-function ptrDown(e){if(stage!=='play')return;e.preventDefault();if(holding)return;
- holding=true;heldPointer=e.pointerId;holdStart=now;lastFire=-Infinity;aimTouch=false;fire();try{canvas.setPointerCapture(e.pointerId)}catch{}}
-function ptrMove(e){if(!holding||heldPointer!==e.pointerId||stage!=='play')return;
- const rect=canvas.getBoundingClientRect(),g=geom();const x=e.clientX-rect.left;
- if(!Number.isFinite(x))return;aimTouch=true;aim=clamp((x-g.cx)/(g.rx*.90),-.79,.79);
-}
-
-function ptrUp(e){if(heldPointer===null||e.pointerId===heldPointer)cleanHold();}
-canvas.addEventListener('pointerdown',ptrDown);canvas.addEventListener('pointermove',ptrMove);canvas.addEventListener('pointerup',ptrUp);canvas.addEventListener('pointercancel',ptrUp);canvas.addEventListener('lostpointercapture',ptrUp);window.addEventListener('pointerup',ptrUp);
-window.addEventListener('blur',cleanHold);document.addEventListener('visibilitychange',()=>{if(document.hidden)cleanHold()});
-window.addEventListener('keydown',e=>{if((e.code==='Space'||e.code==='Enter')&&!['BUTTON','INPUT','TEXTAREA'].includes(document.activeElement?.tagName)){e.preventDefault();if(stage==='play'&&!e.repeat)fire();else if(stage!=='play')start();}});
+function fire(){if(stage!=='play'||now-lastFire<140)return;lastFire=now;const a=aim(),next=make(a.x,a.z,1.00,{
+ vx:-Math.sin(orbitAngle)*.042,vz:Math.cos(orbitAngle)*.042,vh:0,angle:rand(-.20,.20)});
+bodies.push(next);shot++;}
+function credit(p){if(p.credited||p.escaped)return;p.credited=true;score++;if(score>best){best=score;try{localStorage.setItem('chashu-best-v3',String(best))}catch{}}hud();}
+function pointerDown(e){if(stage!=='play'||holding)return;e.preventDefault();holding=true;heldPointer=e.pointerId;holdStart=now;driftPointerY=e.clientY;fire();try{canvas.setPointerCapture(e.pointerId)}catch{}}
+function pointerMove(e){if(!holding||e.pointerId!==heldPointer)return;const dy=driftPointerY===null?0:e.clientY-driftPointerY;
+// Vertical drags adjust the orbit size; angular movement never stops while held.
+orbitRadius=clamp(orbitRadius-dy*.0018,.26,.77);driftPointerY=e.clientY;}
+function pointerUp(e){if(heldPointer===null||e.pointerId===heldPointer)stopHold();}
+canvas.addEventListener('pointerdown',pointerDown);canvas.addEventListener('pointermove',pointerMove);
+canvas.addEventListener('pointerup',pointerUp);canvas.addEventListener('pointercancel',pointerUp);
+canvas.addEventListener('lostpointercapture',pointerUp);window.addEventListener('pointerup',pointerUp);
+window.addEventListener('blur',stopHold);document.addEventListener('visibilitychange',()=>{if(document.hidden)stopHold()});
+window.addEventListener('keydown',e=>{if((e.code==='Space'||e.code==='Enter')&&!['BUTTON','INPUT','TEXTAREA'].includes(document.activeElement?.tagName)){
+e.preventDefault();if(stage==='play'&&!e.repeat)fire();else if(stage!=='play')start();}});
 el.start.addEventListener('click',start);el.restart.addEventListener('click',start);
-function physics(dt){const g=geom(),step=dt/1000;
- for(const p of bodies){if(p.fixed||p.spilled)continue;p.age+=dt;
- if(!p.settled){p.vy=min(750,p.vy+1150*step);p.x+=p.vx*step;p.y+=p.vy*step;p.angle+=p.omega*step*.16;
- if(p.y>=g.rim+p.z){p.y=g.rim+p.z;p.vy=0;p.vx*=.15;p.omega=0;
- if(bowlDistance(p)>1.09){makeSpill(p);return;}markLanded(p);}}
- else{
- // Only recently disturbed pieces need physics; old toppings become stationary.
- if(p.age>4200&&Math.abs(p.vx)+Math.abs(p.vz)<.4)continue;
- p.x+=p.vx*step;p.z+=p.vz*step;p.y=g.rim+p.z;
- const damping=Math.exp(-dt*.0058);p.vx*=damping;p.vz*=damping;
- if(Math.abs(p.vx)<.18)p.vx=0;if(Math.abs(p.vz)<.18)p.vz=0;
- // A piece may only fall if its visible centre crosses the actual soup rim.
- if(bowlDistance(p)>1.09){p.danger=(p.danger||0)+dt;if(p.danger>75){makeSpill(p);return;}}
- else p.danger=0;
- }}
+// Semi-implicit Euler with spatial hash contact solver. All slices (except escaped
+// pieces) exchange impulses. The escaped pieces obey the same gravity step.
+function physics(dt){const step=dt/1000;
+ for(const p of bodies){p.age+=step;
+  if(p.escaped){p.vh-=PHY.gravity*step;p.h+=p.vh*step;p.x+=p.vx*step;p.z+=p.vz*step;
+   p.angle+=p.omega*step;p.omega*=.995;continue;}
+  if(p.h>0||p.vh>0){p.vh-=PHY.gravity*step;p.h+=p.vh*step;}
+  else p.h=0;
+  p.x+=p.vx*step;p.z+=p.vz*step;
+  p.vx*=Math.pow(PHY.planeDrag,dt/16.667);p.vz*=Math.pow(PHY.planeDrag,dt/16.667);
+  p.angle+=p.omega*step;p.omega*=.985;
+  // Soup is the support plane only *inside* the rim. Crossing the rim
+  // removes support and gravity takes the real body downwards.
+  if(bowlDist(p)<PHY.escape){if(p.h<0){p.h=0;p.vh=0;if(!p.resting){p.resting=true;credit(p)}}}
+  else if(p.h<=0){p.escaped=true;p.fallingOut=true;p.resting=false;p.vh=min(p.vh,-.08);p.omega+=clamp(p.vx+p.vz,-.4,.4);}
+ }
+ // Spatial hashing avoids testing every pair every frame.
+ const cell=.32,grid=new Map();for(let i=0;i<bodies.length;i++){
+ const p=bodies[i];if(p.escaped)continue;const ix=Math.floor(p.x/cell),iz=Math.floor(p.z/cell),key=ix+','+iz;
+ let a=grid.get(key);if(!a){a=[];grid.set(key,a)}a.push(i);}
+ for(let i=0;i<bodies.length;i++){
+ const a=bodies[i];if(a.escaped||a.h>.25)continue;
+ const ix=Math.floor(a.x/cell),iz=Math.floor(a.z/cell);
+ for(let xx=ix-1;xx<=ix+1;xx++)for(let zz=iz-1;zz<=iz+1;zz++){
+ const group=grid.get(xx+','+zz);if(!group)continue;
+ for(const j of group){if(j<=i)continue;const b=bodies[j];if(b.escaped||b.h>.25)continue;
+ const dx=b.x-a.x,dz=b.z-a.z,d2=dx*dx+dz*dz;
+ const contact=PHY.contact;if(d2>=contact*contact)continue;
+ const d=Math.sqrt(max(d2,.000001)),nx=d>.001?dx/d:Math.cos(i*2.4),nz=d>.001?dz/d:Math.sin(i*2.4);
+ const overlap=contact-d;
+ // Normal impulses spread stacked slices, but permit soft overlap like sliced meat.
+ const correction=overlap*PHY.contactStiffness;
+ a.x-=nx*correction*.5;a.z-=nz*correction*.5;
+ b.x+=nx*correction*.5;b.z+=nz*correction*.5;
+ const rel=(b.vx-a.vx)*nx+(b.vz-a.vz)*nz;
+ if(rel<0){const impulse=-rel*.16;a.vx-=nx*impulse;b.vx+=nx*impulse;a.vz-=nz*impulse;b.vz+=nz*impulse;}
+ // resting pork gets a small lateral shove; not a scripted spill.
+ const friction=overlap*PHY.slip;
+ a.vx-=nx*friction;b.vx+=nx*friction;a.vz-=nz*friction;b.vz+=nz*friction;
+ }} }
+ // Leaving the actual support plane is the ONLY failure source.
+ if(stage==='play')for(const p of bodies){if(p.escaped){failPiece=p;stage='spill';stopHold();break;}}
+ if(stage==='spill'&&failPiece&&failPiece.h<-1.25)finish();
 }
-
-function markLanded(p){if(p.fixed||p.settled)return;p.settled=true;p.age=0;score++;pushCrowd(p);if(score>best){best=score;try{localStorage.setItem('chashu-best-v3',String(best))}catch{}}hud();}
+// Only visual state (no invented forces or timed game-over transitions).
+function buildArt(){const old=ctx;
+ const art=document.createElement('canvas');art.width=Math.round(W*dpr);art.height=Math.round(H*dpr);ctx=art.getContext('2d');ctx.setTransform(dpr,0,0,dpr,0,0);woodWall();counter();bowlDrawing();staticLayer=art;
+ sprites=[];const radius=geom().r,sz=Math.ceil(radius*3.3);
+ for(let i=0;i<8;i++){const c=document.createElement('canvas');c.width=Math.round(sz*dpr);c.height=Math.round(sz*dpr);ctx=c.getContext('2d');ctx.setTransform(dpr,0,0,dpr,0,0);meat({x:sz*.5,y:sz*.5,r:radius,angle:0,seed:i*17+7});sprites.push(c)}ctx=old;
+}
+function paintMeat(p){if(!sprites.length){meat(p);return}const sz=p.r*3.3,variant=(Math.floor(p.seed*7)%sprites.length+sprites.length)%sprites.length;
+ctx.save();ctx.translate(p.x,p.y);ctx.rotate(p.angle);ctx.drawImage(sprites[variant],-sz/2,-sz/2,sz,sz);ctx.restore();}
 function ellipse(x,y,rx,ry,color){ctx.beginPath();ctx.ellipse(x,y,max(.1,rx),max(.1,ry),0,0,Math.PI*2);if(color){ctx.fillStyle=color;ctx.fill()}}
 function strokeEllipse(x,y,rx,ry,color,width){ellipse(x,y,rx,ry);ctx.lineWidth=width;ctx.strokeStyle=color;ctx.stroke();}
 function rr(x,y,w,h,r,fill){ctx.beginPath();ctx.roundRect(x,y,w,h,r);ctx.fillStyle=fill;ctx.fill()}
@@ -159,37 +166,36 @@ ctx.restore();}
 
 function rimFront(){const g=geom(),c=g.cx,y=g.rim,rx=g.rx,ry=g.ry;
 ctx.beginPath();ctx.ellipse(c,y,rx,ry,0,.015,Math.PI-.015);ctx.strokeStyle='#fff7e4';ctx.lineWidth=8;ctx.stroke();ctx.beginPath();ctx.ellipse(c,y+2,rx*.979,ry*.95,0,.018,Math.PI-.018);ctx.strokeStyle='#ac4636';ctx.lineWidth=2.1;ctx.stroke();}
-function drawAim(){const g=geom();const x=g.cx+aim*g.rx*.90,z=nextDepth(),y=g.rim+z;
- const d=bowlDistance({x,z});ctx.save();ctx.globalAlpha=.82;
- ctx.strokeStyle=d>.89?'#ff7466':'#ffedac';ctx.lineWidth=2;ctx.setLineDash([5,4]);
- strokeEllipse(x,y,g.r*.98,g.r*.57,d>.89?'#ff776e':'#fce5a9',2);ctx.setLineDash([]);
- ctx.beginPath();ctx.arc(x,y,2.7,0,Math.PI*2);ctx.fillStyle=d>.89?'#fb6e58':'#fce5a9';ctx.fill();ctx.restore();}
-function draw(){ctx.clearRect(0,0,W,H);
- if(staticLayer)ctx.drawImage(staticLayer,0,0,W,H);else{woodWall();counter();bowlDrawing();}
+
+function drawAim(){const g=geom();const a=aim(),at=projection({...a,h:0});ctx.save();
+ ctx.strokeStyle='#fbe7ae5e';ctx.lineWidth=1.6;ctx.setLineDash([4,7]);ctx.beginPath();
+ ctx.ellipse(g.cx,g.rim,g.rx*.86*orbitRadius,g.ry*.77*orbitRadius,0,0,PI*2);ctx.stroke();ctx.setLineDash([]);
+ ctx.lineWidth=2.4;ctx.strokeStyle='#fff1bf';ctx.beginPath();ctx.ellipse(at.x,at.y,g.r*.9,g.r*.52,0,0,PI*2);ctx.stroke();
+ ctx.fillStyle='#fff2be';ctx.beginPath();ctx.arc(at.x,at.y,2.7,0,PI*2);ctx.fill();ctx.restore();}
+function draw(){ctx.clearRect(0,0,W,H);if(staticLayer)ctx.drawImage(staticLayer,0,0,W,H);else{woodWall();counter();bowlDrawing();}
  if(stage==='play')drawAim();
- // The cached sprites make drawing hundreds of slices substantially cheaper.
- const visible=[...bodies].sort((a,b)=>a.y-b.y);for(const p of visible)paintMeat(p);
+ // Draw farther pieces first; projected height places airborne meat above the soup.
+ const ordered=[...bodies].sort((a,b)=>(a.z-a.h*.2)-(b.z-b.h*.2));
+ for(const p of ordered){if(p.fallingOut)continue;const q=projection(p);paintMeat({x:q.x,y:q.y,r:q.r,angle:p.angle,seed:p.seed});}
  rimFront();
- if(stage==='play'){const g=geom(),x=g.cx+aim*g.rx*.90;
- const fake={x,y:H*.455,r:g.r,angle:Math.sin(now*.004)*.08,seed:17};paintMeat(fake);
- ctx.strokeStyle='#fce4b198';ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(x,fake.y-g.r*.9);ctx.lineTo(x,fake.y-g.r*1.5);ctx.stroke();}
- if(flash&&now<flash.until){ctx.save();ctx.textAlign='center';ctx.textBaseline='middle';ctx.font=`900 ${max(17,W*.052)}px sans-serif`;
- ctx.fillStyle=flash.text==='GOOD!'?'#fff2b0':'#ffe2cb';ctx.strokeStyle='#5a261e';ctx.lineWidth=4;ctx.strokeText(flash.text,flash.x,flash.y-(flash.until-now)*.035);
- ctx.fillText(flash.text,flash.x,flash.y-(flash.until-now)*.035);ctx.restore();}
+ // Falling-out meat goes in front of the bowl, physically below the rim.
+ for(const p of bodies){if(!p.fallingOut)continue;const q=projection(p);paintMeat({x:q.x,y:q.y,r:q.r,angle:p.angle,seed:p.seed});}
+ if(stage==='play'){const a=aim(),p=projection({...a,h:1.00});paintMeat({x:p.x,y:p.y,r:p.r,angle:now*.00019,seed:17});}
+ if(stage==='spill'){
+ ctx.save();ctx.font=`900 ${max(18,W*.057)}px sans-serif`;ctx.textAlign='center';ctx.lineWidth=4;
+ ctx.strokeStyle='#632018';ctx.fillStyle='#ffedc7';ctx.strokeText('こぼれた！',W*.5,H*.37);ctx.fillText('こぼれた！',W*.5,H*.37);ctx.restore();}
 }
 function frame(ts){const dt=clamp(ts-prev||16,0,34);prev=ts;now=ts;
  if(stage==='play'){
- if(!aimTouch){aim+=dir*dt*(.00077+min(.00035,(score-BASE)*.000007));if(aim>.79){aim=.79;dir=-1}if(aim<-.79){aim=-.79;dir=1}}
- if(holding&&now-holdStart>=250&&now-lastFire>=208)fire();
- // 1 simulation step. Contact settling is event-driven instead of O(N²) per frame.
- physics(dt);
- }else if(stage==='spill'&&spillPiece){
- const p=spillPiece,step=dt/1000;p.vy+=980*step;p.x+=p.vx*step;p.y+=p.vy*step;p.angle+=p.omega*step;
- p.x=clamp(p.x,p.r,W-p.r);if(now-spillStarted>1080)end();
+ // Rotate automatically regardless of whether the pointer moves.
+ orbitAngle+=(dt/1000)*(.96+min(.40,max(0,score-BASE)*.004));
+ if(holding&&now-holdStart>=220&&now-lastFire>=290)fire();
  }
- try{draw()}catch(e){if(!lastFrameError){lastFrameError=true;console.error('Render error',e)}}
- requestAnimationFrame(frame);
+ if(stage==='play'||stage==='spill'){
+ // Physics integration at bounded substeps to prevent jumps on slow devices.
+ const steps=max(1,Math.ceil(dt/16));for(let i=0;i<steps;i++)physics(dt/steps);
+ }
+ draw();requestAnimationFrame(frame);
 }
-
 bodies=initial();hud();requestAnimationFrame(frame);
 })();
