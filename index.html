@@ -108,7 +108,7 @@ let shotPulse=null,landPulses=[];
 const SHARE_URL='https://ryg4mk.github.io/chashu-12x/';
 let sharePoster=null,shareFile=null;
 function shareCaption(){return `チャーシュー麺、チャーシュー${factor(score)}倍！？`;}
-function shareText(){return shareCaption()+'\\n'+SHARE_URL;}
+function shareText(){return shareCaption()+'\n'+SHARE_URL;}
 // The exported image shows the real in-game tower, without the HTML result overlay.
 function makeSharePoster(){
  const poster=document.createElement('canvas'),out=poster.getContext('2d');
