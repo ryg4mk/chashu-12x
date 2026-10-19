@@ -4,7 +4,7 @@
 const BASE=6, RAMEN=950, SLICE=70, GRAMS=12, MM=7;
 const PREVIEW_MODE=new URLSearchParams(window.location.search).get('preview')==='1';
 const canvas=document.getElementById('game');let ctx=canvas.getContext('2d');const $=id=>document.getElementById(id);
-const el={score:$('score'),best:$('best'),total:$('total'),overlay:$('overlay'),label:$('panel-label'),title:$('panel-title'),info:$('panel-info'),details:$('result-detail'),start:$('start'),restart:$('restart')};
+const el={score:$('score'),best:$('best'),total:$('total'),overlay:$('overlay'),label:$('panel-label'),title:$('panel-title'),info:$('panel-info'),details:$('result-detail'),start:$('start'),restart:$('restart'),share:$('share-result'),shareFallback:$('share-fallback'),shareCopy:$('share-copy'),shareCopyText:$('share-copy-text')};
 const min=Math.min,max=Math.max,PI=Math.PI;
 const clamp=(v,a,b)=>max(a,min(b,v));
 const money=n=>Math.round(n).toLocaleString('ja-JP')+'円';
@@ -15,6 +15,75 @@ let W=360,H=510,dpr=1,stage='menu',bodies=[],score=BASE,best=BASE;
 let now=0,prev=0,sweepX=0,sweepDir=1,holding=false,heldPointer=null,holdStart=0,lastFire=-1e6,shot=0;
 let staticLayer=null,sprites=[],failPiece=null,frameCount=0,settleTime=0,flash=null,slowFrame=0;
 let shotPulse=null,landPulses=[];
+const SHARE_URL='https://ryg4mk.github.io/chashu-12x/';
+let sharePoster=null,shareFile=null;
+function shareCaption(){return `チャーシュー麺、チャーシュー${factor(score)}倍！？`;}
+function shareText(){return shareCaption()+'\\n'+SHARE_URL;}
+// The exported image shows the real in-game tower, without the HTML result overlay.
+function makeSharePoster(){
+ const poster=document.createElement('canvas'),out=poster.getContext('2d');
+ const width=900,pad=42,inner=width-pad*2,header=180,gameHeight=Math.round(inner*H/W);
+ poster.width=width;poster.height=header+gameHeight+162;
+ const bg=out.createLinearGradient(0,0,0,poster.height);
+ bg.addColorStop(0,'#643723');bg.addColorStop(1,'#24130c');out.fillStyle=bg;out.fillRect(0,0,width,poster.height);
+ out.textAlign='center';out.fillStyle='#fff4d8';out.font='900 49px sans-serif';out.fillText('チャーシュー麺、',width/2,70);
+ out.font='900 61px sans-serif';out.fillStyle='#ffca7a';out.fillText(`チャーシュー${factor(score)}倍！？`,width/2,148);
+ out.fillStyle='#e0aa72';out.fillRect(pad-4,header-4,inner+8,gameHeight+8);
+ out.drawImage(canvas,pad,header,inner,gameHeight);
+ const y=header+gameHeight;
+ out.fillStyle='#fff0d3';out.font='800 43px sans-serif';out.fillText(`チャーシュー ${score}枚`,width/2,y+66);
+ out.fillStyle='#e8be95';out.font='27px sans-serif';out.fillText(SHARE_URL,width/2,y+119);
+ return poster;
+}
+function prepareSharePoster(){
+ try{sharePoster=makeSharePoster();}catch(error){console.error('Failed to render result image',error);sharePoster=null;el.share.disabled=true;return;}
+ shareFile=null;el.share.disabled=true;
+ if(typeof sharePoster.toBlob!=='function'){el.share.disabled=false;return;}
+ const poster=sharePoster;
+ try{
+  poster.toBlob(blob=>{
+   if(stage!=='over'||poster!==sharePoster)return;
+   if(blob&&typeof File!=='undefined')shareFile=new File([blob],`chashu-12x-${score}mai.png`,{type:'image/png'});
+   el.share.disabled=false;
+  },'image/png');
+ }catch(error){console.warn('PNG blob conversion unavailable',error);el.share.disabled=false;}
+}
+function downloadShareImage(){
+ if(!sharePoster)return;
+ const link=document.createElement('a');
+ if(shareFile&&typeof URL.createObjectURL==='function'){
+  const objectURL=URL.createObjectURL(shareFile);
+  link.href=objectURL;
+  setTimeout(()=>URL.revokeObjectURL(objectURL),30000);
+ }else link.href=sharePoster.toDataURL('image/png');
+ link.download=`chashu-12x-${score}mai.png`;
+ link.click();
+}
+function showShareFallback(){
+ try{downloadShareImage();}catch(error){console.warn('Result image download failed',error);}
+ el.shareFallback.hidden=false;
+ el.shareCopyText.value=shareText();
+ el.shareCopy.textContent='投稿文とURLをコピー';
+}
+async function shareResult(){
+ if(stage!=='over'||!sharePoster)return;
+ const text=shareText();
+ if(shareFile&&navigator.share&&navigator.canShare&&navigator.canShare({files:[shareFile]})){
+  try{await navigator.share({files:[shareFile],text,title:shareCaption()});return;}
+  catch(error){if(error&&error.name==='AbortError')return;}
+ }
+ showShareFallback();
+}
+async function copyShareText(){
+ const text=shareText();
+ if(navigator.clipboard&&navigator.clipboard.writeText){
+  try{await navigator.clipboard.writeText(text);el.shareCopy.textContent='コピーしました';return;}catch{}
+ }
+ el.shareCopyText.value=text;
+ el.shareCopyText.focus();el.shareCopyText.select();
+ el.shareCopy.textContent='文字を選択しました';
+}
+
 const TEMPO={startSpeed:1.90,speedPerSlice:.012,maxBonus:.67,shotDelay:235,holdDelay:175,tapDelay:95};
 // World-radius units per second: one crossing in about 1.4 seconds.
 const SWEEP={edge:1.13,speed:1.58};
@@ -50,7 +119,7 @@ function initial(){const a=[[-.49,-.36],[-.16,-.48],[.25,-.39],[.52,-.15],[-.32,
 return a.map(([x,z],i)=>make(x,z,0,{seed:11+i*17,credited:true,fixed:true}));}
 function hud(){el.score.innerHTML=score+'<span class="unit">枚</span>';el.best.innerHTML=best+'<span class="unit">枚</span>';el.total.textContent=money(priceFor(score));}
 function stopHold(){holding=false;heldPointer=null;}
-function start(){stopHold();stage='play';bodies=initial();score=BASE;sweepX=0;sweepDir=1;shot=0;lastFire=-1e6;failPiece=null;settleTime=0;flash=null;shotPulse=null;landPulses=[];
+function start(){sharePoster=null;shareFile=null;el.share.hidden=true;el.shareFallback.hidden=true;stopHold();stage='play';bodies=initial();score=BASE;sweepX=0;sweepDir=1;shot=0;lastFire=-1e6;failPiece=null;settleTime=0;flash=null;shotPulse=null;landPulses=[];
 el.label.textContent='特製チャーシューメン';el.title.classList.remove('result-title');el.overlay.classList.add('hidden');hud();}
 function factor(n){return (Math.round(n/BASE*100)/100).toString();}
 function payment(n){return Math.ceil(n/1000)*1000;}
@@ -58,7 +127,7 @@ function finish(){if(stage==='over')return;stage='over';stopHold();const cost=pr
 el.label.textContent='ゲームオーバー';el.title.classList.add('result-title');el.title.innerHTML=`チャーシューメン、<br>チャーシュー${factor(score)}倍！？`;
 el.info.textContent=`${score}枚`;el.details.hidden=false;
 el.details.innerHTML=`<div><span>チャーシュー重量</span><b>${score*GRAMS}g</b></div><div><span>チャーシューの厚み</span><b>${score*MM}mm</b></div><div><span>お会計</span><b>${money(cost)}</b></div><div><span>お預かり</span><b>${money(pay)}</b></div><div class="change"><span>お釣り</span><b>${money(pay-cost)}</b></div>`;
-el.start.textContent='もう一度';el.overlay.classList.remove('hidden');}
+el.start.textContent='もう一度';el.share.hidden=false;el.overlay.classList.remove('hidden');draw();prepareSharePoster();}
 function fire(){if(stage!=='play'||now-lastFire<TEMPO.tapDelay)return;
 lastFire=now;const a=aim();shotPulse={x:a.x,z:a.z,at:now};
 // Use only genuinely supported, landed pork as the launching clearance.
@@ -77,7 +146,7 @@ canvas.addEventListener('lostpointercapture',pointerUp);window.addEventListener(
 window.addEventListener('blur',stopHold);document.addEventListener('visibilitychange',()=>{if(document.hidden)stopHold()});
 window.addEventListener('keydown',e=>{if((e.code==='Space'||e.code==='Enter')&&!['BUTTON','INPUT','TEXTAREA'].includes(document.activeElement?.tagName)){
 e.preventDefault();if(stage==='play'&&!e.repeat)fire();else if(stage!=='play')start();}});
-el.start.addEventListener('click',start);el.restart.addEventListener('click',start);
+el.start.addEventListener('click',start);el.restart.addEventListener('click',start);el.share.addEventListener('click',shareResult);el.shareCopy.addEventListener('click',copyShareText);
 
 // 2.5D disc physics: every body has horizontal position and height. A settled
 // body becomes a static collider, NOT a decorative image. Falling pieces must
